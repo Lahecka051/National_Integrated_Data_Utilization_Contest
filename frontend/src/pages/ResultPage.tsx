@@ -1,9 +1,11 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { Errand, AppMode, RecommendationResponse, SlotRecommendation } from '../types'
 import RecommendationCard from '../components/RecommendationCard'
 import Timeline from '../components/Timeline'
 import KakaoMap, { type KakaoMapHandle } from '../components/KakaoMap'
 import CongestionChart from '../components/CongestionChart'
+import ChatBot from '../components/ChatBot'
+import { fetchLLMStatus } from '../utils/api'
 
 interface ResultPageProps {
   result: RecommendationResponse
@@ -21,6 +23,11 @@ export default function ResultPage({ result, errands, onReset, mode, onSetAlarm 
   const [selectedIdx, setSelectedIdx] = useState(0)
   const selected = result.recommendations[selectedIdx]
   const mapRef = useRef<KakaoMapHandle>(null)
+  const [llmAvailable, setLlmAvailable] = useState(false)
+
+  useEffect(() => {
+    fetchLLMStatus().then(s => setLlmAvailable(s.available)).catch(() => {})
+  }, [])
 
   const handleVisitClick = (index: number) => {
     if (!mapRef.current || !selected) return
@@ -134,7 +141,7 @@ export default function ResultPage({ result, errands, onReset, mode, onSetAlarm 
       </div>
 
       {/* 하단 버튼 */}
-      <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20">
         <button onClick={onReset} className="btn-secondary">
           다른 용무로 다시 추천받기
         </button>
@@ -151,6 +158,11 @@ export default function ResultPage({ result, errands, onReset, mode, onSetAlarm 
           </button>
         )}
       </div>
+
+      {/* AI 챗봇 */}
+      {llmAvailable && selected && (
+        <ChatBot recommendation={selected} errands={errands} />
+      )}
     </div>
   )
 }

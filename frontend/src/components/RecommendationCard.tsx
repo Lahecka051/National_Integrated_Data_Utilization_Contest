@@ -55,7 +55,7 @@ export default function RecommendationCard({ recommendation: rec, isSelected, on
       </div>
 
       {/* 사유 */}
-      <p className="text-xs text-gray-400 leading-relaxed">{rec.reason}</p>
+      <p className="text-sm text-gray-500 leading-relaxed line-clamp-3">{rec.reason}</p>
     </button>
   )
 }

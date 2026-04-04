@@ -80,3 +80,15 @@ export interface TaskList {
 
 export type AppMode = 'mode1' | 'mode2'
 export type AppStep = 'landing' | 'errand-select' | 'date-select' | 'loading' | 'result'
+
+// LLM 관련 타입
+export interface NLParseResponse {
+  errands: Errand[]
+  original_text: string
+  parsed_successfully: boolean
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}

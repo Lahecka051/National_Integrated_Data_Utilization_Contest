@@ -1,4 +1,4 @@
-import type { Errand, RecommendationResponse, SlotRecommendation, TaskList, HalfDayType } from '../types'
+import type { Errand, RecommendationResponse, SlotRecommendation, TaskList, HalfDayType, NLParseResponse, ChatMessage } from '../types'
 
 const API_BASE = '/api'
 
@@ -100,5 +100,37 @@ export interface HolidayInfo {
 export async function fetchHolidays(year: string): Promise<{ holidays: HolidayInfo[] }> {
   const res = await fetch(`${API_BASE}/holidays/${year}`)
   if (!res.ok) throw new Error('공휴일 조회 실패')
+  return res.json()
+}
+
+// === LLM API ===
+
+export async function parseErrandsFromText(text: string): Promise<NLParseResponse> {
+  const res = await fetch(`${API_BASE}/parse-errands`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+  if (!res.ok) throw new Error('AI 분석 실패')
+  return res.json()
+}
+
+export async function sendChatMessage(
+  messages: ChatMessage[],
+  recommendation: SlotRecommendation,
+  errands: Errand[] = [],
+): Promise<{ reply: string; error: boolean }> {
+  const res = await fetch(`${API_BASE}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages, recommendation, errands }),
+  })
+  if (!res.ok) throw new Error('채팅 요청 실패')
+  return res.json()
+}
+
+export async function fetchLLMStatus(): Promise<{ available: boolean }> {
+  const res = await fetch(`${API_BASE}/llm-status`)
+  if (!res.ok) return { available: false }
   return res.json()
 }

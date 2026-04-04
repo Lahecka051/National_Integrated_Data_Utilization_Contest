@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { Errand, FacilityType, AppMode } from '../types'
-import { fetchNearbyBanks, type NearbyPlace } from '../utils/api'
+import { fetchNearbyBanks, parseErrandsFromText, fetchLLMStatus, type NearbyPlace } from '../utils/api'
 
 const TASK_MAP: Record<string, { type: FacilityType; tasks: string[] }> = {
   '민원실': { type: '민원실', tasks: ['전입신고', '주민등록등본 발급', '인감증명서 발급', '여권 신청'] },
@@ -33,6 +33,41 @@ export default function ErrandSelectPage({ onSubmit, error, mode, onBack }: Erra
   const [selectedBank, setSelectedBank] = useState<NearbyPlace | null>(null)
   const [showBankPicker, setShowBankPicker] = useState(false)
   const [banksLoading, setBanksLoading] = useState(false)
+
+  // AI 자연어 입력
+  const [nlText, setNlText] = useState('')
+  const [nlLoading, setNlLoading] = useState(false)
+  const [nlMessage, setNlMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [llmAvailable, setLlmAvailable] = useState(false)
+
+  useEffect(() => {
+    fetchLLMStatus().then(s => setLlmAvailable(s.available)).catch(() => {})
+  }, [])
+
+  const handleNLParse = async () => {
+    if (!nlText.trim()) return
+    setNlLoading(true)
+    setNlMessage(null)
+    try {
+      const result = await parseErrandsFromText(nlText)
+      if (result.parsed_successfully && result.errands.length > 0) {
+        const newSelected = new Set(selected)
+        const parsedNames: string[] = []
+        result.errands.forEach(e => {
+          newSelected.add(e.task_name)
+          parsedNames.push(e.task_name)
+        })
+        setSelected(newSelected)
+        setNlMessage({ type: 'success', text: `AI가 분석한 용무: ${parsedNames.join(', ')}` })
+      } else {
+        setNlMessage({ type: 'error', text: '자동 분석에 실패했습니다. 아래에서 직접 선택해주세요.' })
+      }
+    } catch {
+      setNlMessage({ type: 'error', text: '자동 분석에 실패했습니다. 아래에서 직접 선택해주세요.' })
+    } finally {
+      setNlLoading(false)
+    }
+  }
 
   // 은행 용무가 선택되면 근처 은행 목록 로드
   const hasBankTask = Array.from(selected).some(t => TASK_MAP['은행'].tasks.includes(t))
@@ -94,6 +129,44 @@ export default function ErrandSelectPage({ onSubmit, error, mode, onBack }: Erra
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-6 text-sm">
           {error}
+        </div>
+      )}
+
+      {/* AI 자연어 입력 */}
+      {llmAvailable && (
+        <div className="card bg-gradient-to-r from-violet-50 to-indigo-50 border-violet-200 mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-7 h-7 bg-violet-100 rounded-lg flex items-center justify-center text-sm">AI</span>
+            <h3 className="text-sm font-bold text-violet-800">AI로 용무 입력</h3>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={nlText}
+              onChange={e => setNlText(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleNLParse()}
+              placeholder="예: 은행 가서 통장 만들고 주민센터에서 서류 떼야 해"
+              className="flex-1 px-4 py-2.5 rounded-xl border border-violet-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent placeholder:text-gray-400"
+              disabled={nlLoading}
+            />
+            <button
+              onClick={handleNLParse}
+              disabled={nlLoading || !nlText.trim()}
+              className="px-4 py-2.5 bg-violet-600 text-white text-sm font-medium rounded-xl hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+            >
+              {nlLoading ? (
+                <span className="flex items-center gap-1.5">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                  분석중
+                </span>
+              ) : 'AI 분석'}
+            </button>
+          </div>
+          {nlMessage && (
+            <p className={`mt-2 text-sm ${nlMessage.type === 'success' ? 'text-violet-700' : 'text-red-600'}`}>
+              {nlMessage.text}
+            </p>
+          )}
         </div>
       )}
 

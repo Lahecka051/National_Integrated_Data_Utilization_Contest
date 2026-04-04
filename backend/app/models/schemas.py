@@ -103,3 +103,31 @@ class OptimizeSlotRequest(BaseModel):
     errands: list[Errand]
     date: str  # YYYY-MM-DD
     half_day_type: HalfDayType
+
+
+# === LLM 관련 모델 ===
+
+class NLParseRequest(BaseModel):
+    text: str
+
+
+class NLParseResponse(BaseModel):
+    errands: list[Errand]
+    original_text: str
+    parsed_successfully: bool
+
+
+class ChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+    recommendation: SlotRecommendation
+    errands: list[Errand] = []
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    error: bool = False

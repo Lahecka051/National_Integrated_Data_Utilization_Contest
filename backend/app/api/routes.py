@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter
 from ..models.schemas import (
     ErrandRequest,
@@ -6,9 +7,20 @@ from ..models.schemas import (
     SlotRecommendation,
     Facility,
     FacilityType,
+    Errand,
+    NLParseRequest,
+    NLParseResponse,
+    ChatRequest,
+    ChatResponse,
 )
 from ..services.optimizer import recommend_best_slots, simulate_slot, HalfDayType
 from ..services.wait_time_model import generate_heatmap
+from ..services.llm_service import (
+    parse_errands_from_text,
+    generate_recommendation_reason,
+    chat_about_recommendation,
+    is_llm_available,
+)
 from ..mock.data import FACILITIES, get_civil_wait, get_bank_wait, get_post_wait, TASK_DURATIONS
 from ..external.public_api import (
     fetch_civil_realtime, fetch_civil_meta,
@@ -31,11 +43,30 @@ from datetime import datetime
 router = APIRouter(prefix="/api")
 
 
+async def _enrich_reasons(slots: list[SlotRecommendation]) -> None:
+    """LLM으로 추천 이유를 자연어로 보강 (실패시 기존 reason 유지)"""
+    if not is_llm_available() or not slots:
+        return
+    tasks = []
+    for slot in slots:
+        tasks.append(generate_recommendation_reason(slot.model_dump()))
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for slot, result in zip(slots, results):
+        if isinstance(result, str) and result:
+            slot.reason = result
+
+
 @router.post("/recommend", response_model=RecommendationResponse)
 async def get_recommendation(request: ErrandRequest):
     """모드1: 용무 목록 → 최적 반차 날짜/시간 추천"""
     result = recommend_best_slots(request.errands)
-    return RecommendationResponse(**result)
+    response = RecommendationResponse(**result)
+    # LLM으로 추천 이유 보강 (상위 3개 + 비추천 1개)
+    enrich_targets = list(response.recommendations)
+    if response.not_recommended:
+        enrich_targets.append(response.not_recommended)
+    await _enrich_reasons(enrich_targets)
+    return response
 
 
 @router.post("/optimize-slot", response_model=RecommendationResponse)
@@ -47,7 +78,6 @@ async def optimize_single_slot(request: OptimizeSlotRequest):
     half_day = HalfDayType(request.half_day_type)
 
     if half_day == HalfDayType.FULL_DAY:
-        # 연차: 연차(09시 시작) + 오전반차 + 오후반차 3개를 시뮬레이션하여 비교
         slot_full = simulate_slot(request.errands, target_date, HalfDayType.FULL_DAY)
         slot_morning = simulate_slot(request.errands, target_date, HalfDayType.MORNING)
         slot_afternoon = simulate_slot(request.errands, target_date, HalfDayType.AFTERNOON)
@@ -57,17 +87,61 @@ async def optimize_single_slot(request: OptimizeSlotRequest):
         for i, s in enumerate(slots):
             s.rank = i + 1
 
-        return RecommendationResponse(
-            recommendations=slots,
-            not_recommended=None,
-        )
+        response = RecommendationResponse(recommendations=slots, not_recommended=None)
     else:
         result = simulate_slot(request.errands, target_date, half_day)
         result.rank = 1
-        return RecommendationResponse(
-            recommendations=[result],
-            not_recommended=None,
+        response = RecommendationResponse(recommendations=[result], not_recommended=None)
+
+    await _enrich_reasons(response.recommendations)
+    return response
+
+
+@router.post("/parse-errands", response_model=NLParseResponse)
+async def parse_errands(request: NLParseRequest):
+    """자연어 → 구조화된 용무 파싱 (LLM)"""
+    parsed = await parse_errands_from_text(request.text)
+    if parsed:
+        errands = [
+            Errand(
+                task_type=item["task_type"],
+                task_name=item["task_name"],
+                estimated_duration=item["estimated_duration"],
+            )
+            for item in parsed
+        ]
+        return NLParseResponse(
+            errands=errands,
+            original_text=request.text,
+            parsed_successfully=True,
         )
+    return NLParseResponse(
+        errands=[],
+        original_text=request.text,
+        parsed_successfully=False,
+    )
+
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat_with_ai(request: ChatRequest):
+    """AI 챗봇 대화"""
+    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    rec_data = request.recommendation.model_dump()
+    errands_data = [e.model_dump() for e in request.errands]
+
+    reply = await chat_about_recommendation(messages, rec_data, errands_data)
+    if reply:
+        return ChatResponse(reply=reply)
+    return ChatResponse(
+        reply="죄송합니다, AI 응답을 생성할 수 없습니다. 잠시 후 다시 시도해주세요.",
+        error=True,
+    )
+
+
+@router.get("/llm-status")
+async def get_llm_status():
+    """LLM 사용 가능 여부"""
+    return {"available": is_llm_available()}
 
 
 @router.get("/facilities")

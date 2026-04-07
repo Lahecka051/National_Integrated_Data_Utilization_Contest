@@ -48,6 +48,8 @@ from ..external.bus_terminal_api import fetch_nearby_bus_terminals
 from ..services.transit_congestion import calculate_hub_congestion
 from ..services.trip_recommender import recommend_trip
 from ..services.facility_finder import resolve_facilities_for_types
+from ..services.oneclick_service import confirm_plan as oneclick_confirm_plan
+from ..models.schemas import OneClickConfirmRequest, OneClickConfirmResponse
 from ..external.public_api import (
     fetch_weather_forecast as fetch_weather_api,
     parse_weather_forecast,
@@ -302,6 +304,22 @@ async def consultant_chat_endpoint(request: ConsultantChatRequest):
 async def get_llm_status():
     """LLM 사용 가능 여부"""
     return {"available": is_llm_available()}
+
+
+# ============================================================
+# 원클릭 서비스 (서류 자동 발급 + 행정기관 예약) — DEMO/MOCK
+# ============================================================
+
+@router.post("/oneclick/confirm", response_model=OneClickConfirmResponse)
+async def oneclick_confirm(request: OneClickConfirmRequest):
+    """
+    반차 추천 확정 → 원클릭으로 필요 서류 자동 발급 + 행정기관 예약.
+    ⚠️ 데모용 mock 응답. 실제 발급/예약은 이루어지지 않습니다.
+    """
+    plan_dict = request.plan.model_dump()
+    errands_dict = [e.model_dump() for e in request.errands]
+    result = await oneclick_confirm_plan(plan_dict, errands_dict)
+    return OneClickConfirmResponse(**result)
 
 
 @router.get("/tasks")

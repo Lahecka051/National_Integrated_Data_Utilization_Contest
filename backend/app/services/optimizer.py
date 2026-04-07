@@ -335,6 +335,15 @@ async def simulate_slot(
     )
 
 
+DAY_NAME_FULL = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
+
+
+def _facility_types_label(errands: list[Errand]) -> str:
+    """용무 시설 타입을 한 줄 문자열로."""
+    types = sorted({e.task_type.value for e in errands})
+    return "/".join(types)
+
+
 async def recommend_best_slots(
     errands: list[Errand],
     origin_lat: float,
@@ -343,31 +352,34 @@ async def recommend_best_slots(
     time_constraint: Optional[dict] = None,
 ) -> dict:
     """
-    향후 N주간 모든 슬롯 시뮬레이션 → 상위 3개 + 비추천 1개 반환.
+    슬롯 시뮬레이션 → 상위 3개 + 비추천 1개 반환.
     모든 데이터는 실시간 API 기반.
+
+    time_constraint:
+      - date: 특정 날짜 1일만 추천 (YYYY-MM-DD)
+      - start_date: 이 날짜 이후 평일만 추천
+      - start_time/end_time: 시간대 제약
     """
     if not errands:
-        return {"recommendations": [], "not_recommended": None}
+        return {"recommendations": [], "not_recommended": None, "note": "처리할 용무가 없습니다."}
 
     # 1. 시설 해석 (Kakao Local)
     unique_types = {e.task_type.value for e in errands}
     facility_map = await resolve_facilities_for_types(unique_types, origin_lat, origin_lng)
-    # None 제거
     facility_map = {k: v for k, v in facility_map.items() if v is not None}
     if not facility_map:
-        return {"recommendations": [], "not_recommended": None}
+        return {
+            "recommendations": [],
+            "not_recommended": None,
+            "note": "현재 위치 주변에서 처리 가능한 시설을 찾지 못했습니다.",
+        }
 
-    # 2. 이동 매트릭스 (Kakao Navi)
-    travel_matrix = await _build_travel_matrix(origin_lat, origin_lng, list(facility_map.values()))
-
-    # 3. 슬롯 시뮬레이션
-    today = datetime.now()
-    slots: list[SlotRecommendation] = []
-    weather_cache: dict[str, dict] = {}
-
+    # 2. 시간/날짜 제약 파싱
     custom_start = None
     custom_end = None
     min_date = None
+    exact_date: Optional[datetime] = None
+
     if time_constraint:
         if time_constraint.get("start_time") and time_constraint.get("end_time"):
             try:
@@ -380,6 +392,67 @@ async def recommend_best_slots(
                 min_date = datetime.strptime(time_constraint["start_date"], "%Y-%m-%d")
             except ValueError:
                 pass
+        if time_constraint.get("date"):
+            try:
+                exact_date = datetime.strptime(time_constraint["date"], "%Y-%m-%d")
+            except ValueError:
+                pass
+
+    facility_types_label = _facility_types_label(errands)
+
+    # === 3a. 정확한 날짜가 지정된 경우 — 그 날만 시뮬레이션 ===
+    if exact_date is not None:
+        weekday = exact_date.weekday()
+        # 운영일 검증 (모든 시설 타입은 평일만 운영)
+        if weekday >= 5:
+            day_name = DAY_NAME_FULL[weekday]
+            return {
+                "recommendations": [],
+                "not_recommended": None,
+                "note": (
+                    f"{exact_date.strftime('%Y-%m-%d')}({day_name})은 주말이라 "
+                    f"{facility_types_label}이 운영하지 않습니다. "
+                    f"가까운 평일을 알려드릴까요?"
+                ),
+            }
+
+        # 이동 매트릭스 + 시뮬레이션
+        travel_matrix = await _build_travel_matrix(origin_lat, origin_lng, list(facility_map.values()))
+        weather_cache: dict[str, dict] = {}
+
+        slots: list[SlotRecommendation] = []
+        if custom_start is not None and custom_end is not None:
+            # 사용자 시간대도 함께 지정한 경우 — 그 시간대만
+            half_day = HalfDayType.MORNING if custom_start < 12 else HalfDayType.AFTERNOON
+            s = await simulate_slot(
+                errands, exact_date, half_day, facility_map, travel_matrix, weather_cache,
+                custom_start, custom_end,
+            )
+            slots.append(s)
+        else:
+            # 그 날의 3가지 반차 유형 비교
+            for hd in [HalfDayType.MORNING, HalfDayType.AFTERNOON, HalfDayType.FULL_DAY]:
+                s = await simulate_slot(
+                    errands, exact_date, hd, facility_map, travel_matrix, weather_cache,
+                )
+                slots.append(s)
+
+        slots.sort(key=lambda s: s.total_minutes)
+        for i, slot in enumerate(slots):
+            slot.rank = i + 1
+            slot.is_recommended = True
+
+        return {
+            "recommendations": slots,
+            "not_recommended": None,
+            "note": f"{exact_date.strftime('%Y-%m-%d')}({DAY_NAME_FULL[weekday]}) 일정만 추천합니다.",
+        }
+
+    # === 3b. 일반 추천 — 향후 N주 평일 시뮬레이션 ===
+    travel_matrix = await _build_travel_matrix(origin_lat, origin_lng, list(facility_map.values()))
+    today = datetime.now()
+    slots = []
+    weather_cache = {}
 
     for day_offset in range(1, weeks * 7 + 1):
         target = today + timedelta(days=day_offset)
@@ -396,6 +469,13 @@ async def recommend_best_slots(
             for half_day in [HalfDayType.MORNING, HalfDayType.AFTERNOON, HalfDayType.FULL_DAY]:
                 slot = await simulate_slot(errands, target, half_day, facility_map, travel_matrix, weather_cache)
                 slots.append(slot)
+
+    if not slots:
+        return {
+            "recommendations": [],
+            "not_recommended": None,
+            "note": "추천 가능한 평일 슬롯이 없습니다. 날짜 조건을 확인해주세요.",
+        }
 
     slots.sort(key=lambda s: s.total_minutes)
 

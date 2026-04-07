@@ -753,9 +753,44 @@ async def unified_consultant_chat(
 [날짜 변환표 — 반드시 이 값을 사용하세요]
 {date_hints_text}
 
+[반차 모드 시설 운영시간 — 매우 중요]
+- 민원실: 평일(월~금) 09:00 ~ 18:00 (토/일/공휴일 휴무)
+- 은행:  평일(월~금) 09:00 ~ 16:00 (토/일/공휴일 휴무)
+- 우체국: 평일(월~금) 09:00 ~ 18:00 (토/일/공휴일 휴무)
+- 한국 공휴일 예: 1/1, 3/1, 5/5, 6/6, 8/15, 10/3, 10/9, 12/25, 설날, 추석
+
+[운영 외 요청 처리 — 매우 중요]
+사용자가 다음과 같은 운영 불가 시점에 용무를 요청하면, **반드시 추천을 거절하고 이유를 설명**하세요:
+  - 토요일/일요일 (모든 시설 휴무)
+  - 공휴일 (모든 시설 휴무)
+  - 평일이지만 운영시간 외 (예: 은행 17:00 이후, 새벽/심야)
+
+이 경우 응답 규칙:
+  1. parsed_errands는 정상적으로 파싱하되 time_constraint는 비우거나 "추천 불가" 의도로 설정
+  2. **should_recommend = false** (절대 true 금지)
+  3. action_type = "none"
+  4. text에 다음을 포함:
+     - 요청한 날짜와 요일 명시 (예: "4월 12일 일요일은")
+     - 해당 시설이 운영하지 않는다는 사실
+     - 가까운 평일 대안 제시 (날짜 변환표의 평일 값 활용)
+     - 사용자가 동의하면 그때 추천 진행
+
+예시 응답:
+  사용자: "이번 주 일요일에 등본 떼고 싶어"
+  AI: "주민등록등본 발급은 민원실 업무인데, 4월 12일(일)은 주말이라 민원실이 운영하지 않습니다. 가장 빠른 평일은 4월 13일(월)입니다. 월요일로 추천드릴까요?"
+  (parsed_errands=주민등록등본 발급, should_recommend=false, action_type=none)
+
+[정확한 날짜 처리 vs 범위]
+- 사용자가 **특정 날짜 1일**을 명시한 경우 → time_constraint.date에 YYYY-MM-DD 설정
+  예: "4월 13일에", "내일", "이번 주 월요일에"
+- 사용자가 **범위/이후**를 명시한 경우 → time_constraint.start_date에 YYYY-MM-DD 설정
+  예: "4월 13일 이후로", "다음주부터", "월요일 이후 아무때나"
+- 둘 중 하나만 사용. date가 우선이고 더 정확함.
+- 정확한 날짜가 운영일이면 그 날만 시뮬레이션해서 더 빠른 추천을 받습니다.
+
 [대화 규칙]
 1. 친근하고 자연스러운 한국어 존댓말 (반말X)
-2. **반차 모드**: 용무 파싱되면 즉시 should_recommend=true로 추천. 시간 제약 있으면 같이 처리.
+2. **반차 모드**: 용무 파싱되고 운영 가능 시점이면 should_recommend=true. 운영 불가 시점이면 위 규칙대로 거절.
 3. **출장 모드 — 매우 중요**:
    - destination과 date가 **둘 다 채워지면 무조건 should_recommend=true**로 설정하고 action_type="trip_request_recommend"로 출력하세요.
    - earliest_departure, parking_preference, modes는 없어도 기본값으로 추천 가능 — 절대 이것들 물어보며 멈추지 마세요.
@@ -763,6 +798,7 @@ async def unified_consultant_chat(
    - date만 있고 destination이 없으면 action_type="trip_info_parsed"로 두고 destination만 질문.
 4. 상대 날짜 변환은 반드시 위의 [날짜 변환표]만 참조. 절대 스스로 계산하지 마세요.
    - "다음 주 수요일" → 날짜 변환표의 "다음주 수요일" 값 사용
+   - "이번 주 일요일" → 날짜 변환표의 "이번주 일요일" 값 사용
    - "내일" → 날짜 변환표의 "내일" 값 사용
 5. 답변은 2~3문장으로 간결하게
 
@@ -772,7 +808,7 @@ async def unified_consultant_chat(
   "intent": "half_day" | "business_trip" | "none",
   "action_type": "errands_parsed" | "time_constraint_set" | "request_recommend" | "trip_info_parsed" | "trip_request_recommend" | "none",
   "parsed_errands": [{{"task_type": "시설유형", "task_name": "용무명", "estimated_duration": 처리시간}}] | null,
-  "time_constraint": {{"start_time": "HH:MM"|null, "end_time": "HH:MM"|null, "start_date": "YYYY-MM-DD"|null}} | null,
+  "time_constraint": {{"start_time": "HH:MM"|null, "end_time": "HH:MM"|null, "date": "YYYY-MM-DD"|null, "start_date": "YYYY-MM-DD"|null}} | null,
   "trip_fields": {{"destination": "..."|null, "date": "YYYY-MM-DD"|null, "earliest_departure": "HH:MM"|null, "parking_preference": "near_hub"|"near_home"|null, "modes": ["train","expbus"]|null}} | null,
   "should_recommend": false
 }}
@@ -838,6 +874,17 @@ action_type 가이드:
             else:
                 tc["start_time"] = None
                 tc["end_time"] = None
+            # date (특정 1일)
+            d = tc.get("date")
+            if d and d != "null":
+                try:
+                    dt.strptime(d, "%Y-%m-%d")
+                    has_valid = True
+                except ValueError:
+                    tc["date"] = None
+            else:
+                tc["date"] = None
+            # start_date (범위)
             sd = tc.get("start_date")
             if sd and sd != "null":
                 try:

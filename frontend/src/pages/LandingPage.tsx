@@ -212,23 +212,34 @@ export default function LandingPage({ onStartMode1, onStartMode2, onStartBusines
                   {(msg.action?.action_type === 'recommend_triggered' || msg.action?.action_type === 'request_recommend') && msg.action.recommendation && (
                     <div className="mt-2 ml-10 p-4 bg-amber-50 border border-amber-200 rounded-xl">
                       <p className="text-xs font-bold text-amber-700 mb-2">🏛️ 반차 추천 결과</p>
-                      <div className="space-y-2">
-                        {msg.action.recommendation.recommendations.slice(0, 3).map((rec, j) => (
-                          <div key={j} className="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 text-sm border border-amber-100">
-                            <div className="flex items-center gap-2">
-                              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${j === 0 ? 'bg-amber-500' : 'bg-gray-400'}`}>{j + 1}</span>
-                              <span className="text-gray-700">{rec.date} {rec.day_of_week} {rec.half_day_type}</span>
-                            </div>
-                            <span className="font-bold text-gray-900">{rec.total_minutes}분</span>
+                      {msg.action.recommendation.note && (
+                        <div className="mb-2 px-3 py-2 bg-white border border-amber-200 rounded-lg text-[11px] text-amber-800">
+                          ℹ️ {msg.action.recommendation.note}
+                        </div>
+                      )}
+                      {msg.action.recommendation.recommendations.length === 0 ? (
+                        <p className="text-xs text-gray-500 px-3 py-2">표시할 추천 결과가 없습니다.</p>
+                      ) : (
+                        <>
+                          <div className="space-y-2">
+                            {msg.action.recommendation.recommendations.slice(0, 3).map((rec, j) => (
+                              <div key={j} className="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 text-sm border border-amber-100">
+                                <div className="flex items-center gap-2">
+                                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${j === 0 ? 'bg-amber-500' : 'bg-gray-400'}`}>{j + 1}</span>
+                                  <span className="text-gray-700">{rec.date} {rec.day_of_week} {rec.half_day_type}</span>
+                                </div>
+                                <span className="font-bold text-gray-900">{rec.total_minutes}분</span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                      <button
-                        onClick={() => handleViewResult(msg.action!)}
-                        className="mt-3 w-full py-2.5 bg-violet-600 text-white text-sm font-bold rounded-xl hover:bg-violet-700 transition-colors"
-                      >
-                        상세 결과 보기
-                      </button>
+                          <button
+                            onClick={() => handleViewResult(msg.action!)}
+                            className="mt-3 w-full py-2.5 bg-violet-600 text-white text-sm font-bold rounded-xl hover:bg-violet-700 transition-colors"
+                          >
+                            상세 결과 보기
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
 

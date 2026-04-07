@@ -4,6 +4,7 @@ import type {
   ParkingListResponse, PublicParking, TransitHubListResponse, HubCongestion,
   GeocodeResult, ReverseGeocodeResult, HubType,
   TripRequest, TripRecommendResponse, TripConsultantState, TripConsultantChatResponse,
+  OneClickConfirmResponse,
 } from '../types'
 
 const API_BASE = '/api'
@@ -249,6 +250,20 @@ export async function fetchTripRecommend(req: TripRequest): Promise<TripRecommen
     body: JSON.stringify(req),
   })
   if (!res.ok) throw new Error('여행 추천 실패')
+  return res.json()
+}
+
+// === 원클릭 서비스 (DEMO) ===
+export async function confirmOneClickPlan(
+  plan: SlotRecommendation,
+  errands: Errand[],
+): Promise<OneClickConfirmResponse> {
+  const res = await fetch(`${API_BASE}/oneclick/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan, errands }),
+  })
+  if (!res.ok) throw new Error('원클릭 확정 요청 실패')
   return res.json()
 }
 

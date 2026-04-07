@@ -71,6 +71,7 @@ export interface SlotRecommendation {
 export interface RecommendationResponse {
   recommendations: SlotRecommendation[]
   not_recommended: SlotRecommendation | null
+  note?: string | null
 }
 
 export interface TaskList {
@@ -281,6 +282,41 @@ export interface TripChatMessage {
   role: 'user' | 'assistant'
   content: string
   action?: TripConsultantAction
+}
+
+// === 원클릭 서비스 (DEMO/MOCK) ===
+
+export interface OneClickDocument {
+  document_name: string
+  required_for: string
+  source: string
+  auto_issued: boolean
+  issued_at: string | null
+  status: string
+  download_url: string | null
+  is_mock: boolean
+}
+
+export interface OneClickReservation {
+  facility_id: string
+  facility_name: string
+  facility_type: string
+  visit_date: string
+  visit_time: string
+  reservation_number: string
+  channel: string
+  status: string
+  is_mock: boolean
+}
+
+export interface OneClickConfirmResponse {
+  success: boolean
+  is_mock: boolean
+  summary: string
+  documents: OneClickDocument[]
+  reservations: OneClickReservation[]
+  warnings: string[]
+  confirmed_at: string
 }
 
 // LLM 관련 타입

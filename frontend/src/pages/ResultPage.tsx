@@ -4,6 +4,7 @@ import RecommendationCard from '../components/RecommendationCard'
 import Timeline from '../components/Timeline'
 import KakaoMap, { type KakaoMapHandle } from '../components/KakaoMap'
 import CongestionChart from '../components/CongestionChart'
+import OneClickConfirmModal from '../components/OneClickConfirmModal'
 import { useLocation } from '../contexts/LocationContext'
 
 interface ResultPageProps {
@@ -19,6 +20,7 @@ export default function ResultPage({ result, errands, onReset, mode, onSetAlarm 
   const [selectedIdx, setSelectedIdx] = useState(0)
   const selected = result.recommendations[selectedIdx]
   const mapRef = useRef<KakaoMapHandle>(null)
+  const [showOneClick, setShowOneClick] = useState(false)
 
   const handleVisitClick = (index: number) => {
     if (!mapRef.current || !selected) return
@@ -104,6 +106,38 @@ export default function ResultPage({ result, errands, onReset, mode, onSetAlarm 
         </div>
       )}
 
+      {/* 원클릭 서비스 카드 (DEMO) */}
+      {selected && (
+        <div className="mb-8 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border-2 border-amber-300 rounded-2xl p-5 relative overflow-hidden">
+          <div className="absolute top-3 right-3 px-2 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full shadow-sm">
+            🔶 DEMO · MOCK
+          </div>
+          <div className="flex items-start gap-4">
+            <div className="w-14 h-14 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl flex items-center justify-center text-3xl flex-shrink-0 shadow-md">
+              ⚡
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="text-lg font-bold text-amber-900">원클릭 서비스</h3>
+                <span className="text-[10px] px-2 py-0.5 bg-white text-amber-700 border border-amber-200 rounded-full font-bold">데모</span>
+              </div>
+              <p className="text-sm text-amber-800 leading-relaxed mb-3">
+                선택한 일정을 한 번에 확정하세요. <strong>필요 서류를 자동 발급</strong>하고, <strong>행정기관에 예약</strong>까지 진행합니다.
+              </p>
+              <p className="text-[11px] text-amber-700/70 mb-4">
+                ⚠️ 데모 단계에서는 정부24/홈택스/은행 영업점 예약 시스템과 연동이 없어 mock 데이터로 시뮬레이션됩니다.
+              </p>
+              <button
+                onClick={() => setShowOneClick(true)}
+                className="px-5 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-bold hover:from-amber-600 hover:to-orange-600 transition-all shadow-lg shadow-amber-200"
+              >
+                ⚡ 원클릭으로 확정하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 혼잡도 차트 */}
       <div className="card mb-8">
         <h3 className="text-lg font-bold text-gray-900 mb-4">
@@ -150,6 +184,22 @@ export default function ResultPage({ result, errands, onReset, mode, onSetAlarm 
         )}
       </div>
 
+      {/* 원클릭 확정 모달 */}
+      {showOneClick && selected && (
+        <OneClickConfirmModal
+          plan={selected}
+          errands={errands}
+          onClose={() => setShowOneClick(false)}
+          onReset={() => {
+            setShowOneClick(false)
+            onReset()
+          }}
+          onSetAlarm={() => {
+            setShowOneClick(false)
+            handleSetAlarm()
+          }}
+        />
+      )}
     </div>
   )
 }

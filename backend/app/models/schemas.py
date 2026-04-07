@@ -97,6 +97,7 @@ class SlotRecommendation(BaseModel):
 class RecommendationResponse(BaseModel):
     recommendations: list[SlotRecommendation]
     not_recommended: Optional[SlotRecommendation] = None
+    note: Optional[str] = None  # 추천 불가 사유 또는 안내 메시지
 
 
 class OptimizeSlotRequest(BaseModel):
@@ -397,3 +398,46 @@ class TripConsultantChatResponse(BaseModel):
     action: TripConsultantAction
     updated_state: TripConsultantState
     error: bool = False
+
+
+# === 원클릭 서비스 (서류 자동 발급 + 행정기관 예약) ===
+# ⚠️ 데모용: 실제 서류 발급/예약 API 연동 없이 mock 응답을 반환합니다.
+
+class OneClickDocument(BaseModel):
+    """원클릭 서비스로 자동 발급된 (또는 본인 지참 안내된) 서류 1건."""
+    document_name: str
+    required_for: str         # 어떤 용무 때문에 필요한지 (예: "통장 개설")
+    source: str               # 발급 채널 (예: "정부24", "홈택스", "본인 지참")
+    auto_issued: bool         # True: mock 자동 발급, False: 본인 지참
+    issued_at: Optional[str] = None   # ISO timestamp (auto_issued=True 일 때만)
+    status: str               # "발급 완료" | "본인 지참 필요"
+    download_url: Optional[str] = None
+    is_mock: bool = True
+
+
+class OneClickReservation(BaseModel):
+    """원클릭 서비스로 진행된 행정기관 예약 1건."""
+    facility_id: str
+    facility_name: str
+    facility_type: str        # 민원실 | 은행 | 우체국
+    visit_date: str
+    visit_time: str
+    reservation_number: str
+    channel: str              # "정부24", "ㅇㅇ은행 영업점 예약" 등
+    status: str               # "예약 확정"
+    is_mock: bool = True
+
+
+class OneClickConfirmRequest(BaseModel):
+    plan: SlotRecommendation
+    errands: list[Errand]
+
+
+class OneClickConfirmResponse(BaseModel):
+    success: bool
+    is_mock: bool = True
+    summary: str              # 전체 요약 한 줄
+    documents: list[OneClickDocument] = []
+    reservations: list[OneClickReservation] = []
+    warnings: list[str] = []
+    confirmed_at: str         # ISO timestamp

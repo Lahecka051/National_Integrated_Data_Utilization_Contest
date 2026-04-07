@@ -81,25 +81,25 @@ export default function TripPlanForm({ onSubmit, loading }: TripPlanFormProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
+      <div className="grid grid-cols-[1.5fr_1fr] gap-2">
+        <div className="min-w-0">
           <label className="text-xs font-bold text-gray-500 mb-2 block">출발 날짜</label>
           <input
             type="date"
             value={date}
             min={todayStr()}
             onChange={e => setDate(e.target.value)}
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+            className="w-full px-2 py-3 rounded-xl border border-gray-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-primary-400"
             disabled={loading}
           />
         </div>
-        <div>
-          <label className="text-xs font-bold text-gray-500 mb-2 block">희망 출발시각 이후</label>
+        <div className="min-w-0">
+          <label className="text-xs font-bold text-gray-500 mb-2 block">출발시각 이후</label>
           <input
             type="time"
             value={earliest}
             onChange={e => setEarliest(e.target.value)}
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+            className="w-full px-2 py-3 rounded-xl border border-gray-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-primary-400"
             disabled={loading}
           />
         </div>

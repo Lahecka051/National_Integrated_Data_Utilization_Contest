@@ -12,6 +12,9 @@ import LocationPicker from './components/LocationPicker'
 import { useNotification } from './hooks/useNotification'
 import { useLocation } from './contexts/LocationContext'
 import { fetchRecommendation, fetchOptimizeSlot, fetchLLMStatus } from './utils/api'
+import { App as CapacitorApp } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
+import { runBackHandlers } from './lib/backButtonStack'
 
 export interface AlarmInfo {
   date: string
@@ -104,20 +107,20 @@ export default function App() {
     if (delayMs > 0) {
       const timerId = window.setTimeout(() => {
         notification.sendNotification(
-          '하루짜기 - 출발 알림',
+          '반차출장플랜 - 출발 알림',
           `10분 후 ${label} 출발! (${time} 도착 예정)`
         )
         setAlarm(null)
       }, delayMs)
       setAlarm({ date, time, label, timerId })
       notification.sendNotification(
-        '하루짜기 - 알람 설정 완료',
+        '반차출장플랜 - 알람 설정 완료',
         `${date} ${hour}시 ${min > 0 ? min + '분' : ''} 출발 10분 전에 알려드립니다`
       )
     } else {
       const timerId = window.setTimeout(() => {
         notification.sendNotification(
-          '하루짜기 - 알람 데모',
+          '반차출장플랜 - 알람 데모',
           `${label} 출발 알림이 설정되었습니다 (${date} ${time} 10분 전)`
         )
       }, 100)
@@ -135,7 +138,7 @@ export default function App() {
       clearTimeout(alarm.timerId)
       setAlarm(null)
       notification.sendNotification(
-        '하루짜기 - 알람 취소',
+        '반차출장플랜 - 알람 취소',
         '설정된 알람이 취소되었습니다.'
       )
     }
@@ -156,6 +159,30 @@ export default function App() {
     setInitialTripResult(null)
     setError(null)
   }
+
+  // Android 하드웨어 뒤로가기 버튼 처리
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    let handle: any
+    const register = async () => {
+      handle = await CapacitorApp.addListener('backButton', () => {
+        // 1) 컴포넌트 레벨 핸들러(ResultPage 원클릭 모달 등) 우선
+        if (runBackHandlers()) return
+        // 2) 앱 레벨 모달 닫기
+        if (showLocationPicker) { setShowLocationPicker(false); return }
+        if (showSettings) { setShowSettings(false); return }
+        // 3) 단계 뒤로 이동
+        if (step === 'result' || step === 'loading') { handleReset(); return }
+        if (step === 'date-select') { setStep('errand-select'); return }
+        if (step === 'errand-select') { setStep('landing'); return }
+        if (step === 'business-trip') { setStep('landing'); setInitialTripResult(null); return }
+        // 4) 랜딩 → 앱 종료
+        CapacitorApp.exitApp()
+      })
+    }
+    register()
+    return () => { handle?.remove?.() }
+  }, [step, showLocationPicker, showSettings])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -238,7 +265,7 @@ export default function App() {
           permissionState={notification.permissionState}
           onRequestPermission={notification.requestPermission}
           onTestNotification={() => notification.sendNotification(
-            '하루짜기 - 테스트 알림',
+            '반차출장플랜 - 테스트 알림',
             '알림이 정상적으로 작동합니다!'
           )}
           onClose={() => setShowSettings(false)}

@@ -17,6 +17,7 @@ interface LocationContextValue {
   error: string | null
   setManualLocation: (address: string) => Promise<boolean>
   setManualCoords: (lat: number, lng: number) => Promise<void>
+  setLocationDirect: (lat: number, lng: number, address: string) => void
   requestGPS: () => Promise<boolean>
   resetToDefault: () => void
 }
@@ -127,6 +128,14 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     setIsResolving(false)
   }, [updateAddress])
 
+  // 이미 주소를 알고 있을 때 — 추가 API 호출 없이 바로 적용 (검색 결과 선택 시 사용)
+  const setLocationDirect = useCallback((lat: number, lng: number, address: string) => {
+    const next: UserLocation = { lat, lng, address, source: 'manual' }
+    setLocation(next)
+    persist(next)
+    setError(null)
+  }, [])
+
   const resetToDefault = useCallback(() => {
     setLocation(DEFAULT_LOCATION)
     persist(DEFAULT_LOCATION)
@@ -144,7 +153,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
   return (
     <LocationContext.Provider
-      value={{ location, isResolving, error, setManualLocation, setManualCoords, requestGPS, resetToDefault }}
+      value={{ location, isResolving, error, setManualLocation, setManualCoords, setLocationDirect, requestGPS, resetToDefault }}
     >
       {children}
     </LocationContext.Provider>

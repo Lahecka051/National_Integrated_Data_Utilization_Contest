@@ -22,17 +22,24 @@ const SUGGESTIONS = [
 export default function LandingPage({ onStartMode1, onStartMode2, onStartBusinessTrip, llmAvailable, onRecommendationReady, onTripRecommendationReady }: LandingPageProps) {
   const { location } = useLocation()
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: '안녕하세요! 하루짜기 통합 AI 상담사입니다. 반차 일정도, 출장 계획도 모두 도와드릴 수 있어요. 어떤 일을 처리하실 건가요?' },
+    { role: 'assistant', content: '안녕하세요! 반차출장플랜 AI 상담사입니다. 반차 일정도, 출장 계획도 모두 도와드릴 수 있어요. 어떤 일을 처리하실 건가요?' },
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [sessionErrands, setSessionErrands] = useState<Errand[]>([])
   const [timeConstraint, setTimeConstraint] = useState<TimeConstraint | undefined>()
   const [tripState, setTripState] = useState<TripConsultantState>({})
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
 
+  // 채팅 컨테이너 내부에서만 스크롤 — 페이지 전체는 스크롤하지 않음
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = chatContainerRef.current
+    if (!container) return
+    // 사용자가 이미 바닥 근처에 있을 때만 자동 스크롤 (위로 올려서 읽고 있으면 방해 안 함)
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    if (distanceFromBottom < 120) {
+      container.scrollTop = container.scrollHeight
+    }
   }, [messages])
 
   const handleSend = async (text?: string) => {
@@ -91,21 +98,22 @@ export default function LandingPage({ onStartMode1, onStartMode2, onStartBusines
   }
 
   return (
-    <div className="pt-12 pb-8">
+    <div className="pt-8 pb-8">
       {/* Hero */}
       <section className="text-center mb-10">
         <div className="inline-flex items-center gap-2 bg-primary-100 text-primary-700 px-4 py-2 rounded-full text-sm font-medium mb-6">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
-          AI 기반 반차 최적화
+          공공데이터 × AI 일정 플래너
         </div>
-        <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4 leading-tight">
-          구청, 은행, 우체국<br />
-          <span className="text-primary-600">한 번에 끝내는 최적 동선</span>
+        <h1 className="text-3xl md:text-5xl font-bold text-gray-900 mb-4 leading-tight">
+          반차부터 출장까지<br />
+          <span className="text-primary-600">AI가 짜주는 최적의 하루</span>
         </h1>
-        <p className="text-lg text-gray-500 max-w-2xl mx-auto leading-relaxed">
-          AI 상담사에게 용무와 비는 시간을 말씀하시면, 최적 일정을 찾아드립니다.
+        <p className="text-base md:text-lg text-gray-500 max-w-2xl mx-auto leading-relaxed">
+          공공데이터와 AI로 아끼는 직장인 하루 —<br className="sm:hidden" />
+          <span className="sm:ml-1">AI 상담사에게 용무를 말씀하시면 최적의 일정과 동선을 찾아드립니다.</span>
         </p>
       </section>
 
@@ -121,7 +129,7 @@ export default function LandingPage({ onStartMode1, onStartMode2, onStartBusines
                 </svg>
               </div>
               <div>
-                <p className="font-bold">하루짜기 일정 상담사</p>
+                <p className="font-bold">반차출장플랜 AI 상담사</p>
                 <p className="text-sm text-white/70">용무와 시간을 알려주시면 최적 일정을 찾아드려요</p>
               </div>
             </div>
@@ -163,7 +171,7 @@ export default function LandingPage({ onStartMode1, onStartMode2, onStartBusines
             )}
 
             {/* 메시지 영역 */}
-            <div className="overflow-y-auto p-5 space-y-3 min-h-[200px] max-h-[400px]">
+            <div ref={chatContainerRef} className="overflow-y-auto overscroll-contain p-5 space-y-3 min-h-[200px] max-h-[400px]">
               {messages.map((msg, i) => (
                 <div key={i}>
                   <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -309,7 +317,6 @@ export default function LandingPage({ onStartMode1, onStartMode2, onStartBusines
                   </div>
                 </div>
               )}
-              <div ref={messagesEndRef} />
             </div>
 
             {/* 추천 질문 */}

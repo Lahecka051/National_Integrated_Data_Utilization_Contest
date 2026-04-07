@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { Errand, AppMode, RecommendationResponse, SlotRecommendation } from '../types'
 import RecommendationCard from '../components/RecommendationCard'
 import Timeline from '../components/Timeline'
@@ -6,6 +6,7 @@ import KakaoMap, { type KakaoMapHandle } from '../components/KakaoMap'
 import CongestionChart from '../components/CongestionChart'
 import OneClickConfirmModal from '../components/OneClickConfirmModal'
 import { useLocation } from '../contexts/LocationContext'
+import { pushBackHandler } from '../lib/backButtonStack'
 
 interface ResultPageProps {
   result: RecommendationResponse
@@ -21,6 +22,15 @@ export default function ResultPage({ result, errands, onReset, mode, onSetAlarm 
   const selected = result.recommendations[selectedIdx]
   const mapRef = useRef<KakaoMapHandle>(null)
   const [showOneClick, setShowOneClick] = useState(false)
+
+  // 원클릭 모달이 열려 있는 동안 뒤로가기 버튼 소비
+  useEffect(() => {
+    if (!showOneClick) return
+    return pushBackHandler(() => {
+      setShowOneClick(false)
+      return true
+    })
+  }, [showOneClick])
 
   const handleVisitClick = (index: number) => {
     if (!mapRef.current || !selected) return
@@ -54,8 +64,8 @@ export default function ResultPage({ result, errands, onReset, mode, onSetAlarm 
         </p>
       </div>
 
-      {/* 추천 카드 3개 */}
-      <div className="grid md:grid-cols-3 gap-4 mb-6">
+      {/* 추천 카드 3개 — 모바일에서도 가로 3열 */}
+      <div className="grid grid-cols-3 gap-2 mb-6 pt-2">
         {result.recommendations.map((rec, i) => (
           <RecommendationCard
             key={i}
@@ -108,33 +118,35 @@ export default function ResultPage({ result, errands, onReset, mode, onSetAlarm 
 
       {/* 원클릭 서비스 카드 (DEMO) */}
       {selected && (
-        <div className="mb-8 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border-2 border-amber-300 rounded-2xl p-5 relative overflow-hidden">
-          <div className="absolute top-3 right-3 px-2 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full shadow-sm">
-            🔶 DEMO · MOCK
-          </div>
-          <div className="flex items-start gap-4">
-            <div className="w-14 h-14 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl flex items-center justify-center text-3xl flex-shrink-0 shadow-md">
+        <div className="mb-8 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border-2 border-amber-300 rounded-2xl p-5">
+          {/* 헤더: 아이콘 + 제목 + DEMO 배지 */}
+          <div className="flex items-start gap-3 mb-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 shadow-md">
               ⚡
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="text-lg font-bold text-amber-900">원클릭 서비스</h3>
-                <span className="text-[10px] px-2 py-0.5 bg-white text-amber-700 border border-amber-200 rounded-full font-bold">데모</span>
-              </div>
-              <p className="text-sm text-amber-800 leading-relaxed mb-3">
-                선택한 일정을 한 번에 확정하세요. <strong>필요 서류를 자동 발급</strong>하고, <strong>행정기관에 예약</strong>까지 진행합니다.
-              </p>
-              <p className="text-[11px] text-amber-700/70 mb-4">
-                ⚠️ 데모 단계에서는 정부24/홈택스/은행 영업점 예약 시스템과 연동이 없어 mock 데이터로 시뮬레이션됩니다.
-              </p>
-              <button
-                onClick={() => setShowOneClick(true)}
-                className="px-5 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-bold hover:from-amber-600 hover:to-orange-600 transition-all shadow-lg shadow-amber-200"
-              >
-                ⚡ 원클릭으로 확정하기
-              </button>
+            <div className="flex-1 min-w-0 flex items-center flex-wrap gap-2 pt-1">
+              <h3 className="text-lg font-bold text-amber-900">원클릭 서비스</h3>
+              <span className="px-2 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full shadow-sm">
+                🔶 DEMO · MOCK
+              </span>
             </div>
           </div>
+
+          {/* 본문 텍스트 — 카드 전체 폭 사용 */}
+          <p className="text-sm text-amber-800 leading-relaxed mb-3">
+            선택한 일정을 한 번에 확정하세요. <strong>필요 서류를 자동 발급</strong>하고, <strong>행정기관에 예약</strong>까지 진행합니다.
+          </p>
+          <p className="text-[11px] text-amber-700/80 mb-4 leading-relaxed">
+            ⚠️ 데모 단계에서는 정부24/홈택스/은행 영업점 예약 시스템과 연동이 없어 mock 데이터로 시뮬레이션됩니다.
+          </p>
+
+          {/* 풀 와이드 버튼 */}
+          <button
+            onClick={() => setShowOneClick(true)}
+            className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-bold text-base hover:from-amber-600 hover:to-orange-600 transition-all shadow-lg shadow-amber-200 whitespace-nowrap"
+          >
+            ⚡ 원클릭으로 확정하기
+          </button>
         </div>
       )}
 

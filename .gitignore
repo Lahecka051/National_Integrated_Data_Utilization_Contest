@@ -19,6 +19,33 @@ frontend/dist/
 *.swp
 *.swo
 
+# Claude Code
+.claude/
+CLAUDE.md
+.claude.json
+node-v*.msi
+
+# Mobile build artifacts
+android/
+ios/
+frontend/android/
+frontend/ios/
+*.apk
+*.aab
+*.keystore
+*.jks
+**/capacitor.config.local.*
+
+# 릴리즈 서명 관련 — 절대 커밋 금지
+**/release.keystore
+**/release.jks
+**/*.keystore
+**/keystore.properties
+frontend/android/local.properties
+
+# API keys bundled in frontend (demo only)
+frontend/src/config/apiKeys.ts
+
 # OS
 .DS_Store
 Thumbs.db

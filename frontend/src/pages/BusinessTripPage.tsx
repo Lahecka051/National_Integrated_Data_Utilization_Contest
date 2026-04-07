@@ -12,6 +12,7 @@ import TripPlanForm from '../components/TripPlanForm'
 import TripPlanCard from '../components/TripPlanCard'
 import TripTimeline from '../components/TripTimeline'
 import TripRouteMap from '../components/TripRouteMap'
+import { pushBackHandler } from '../lib/backButtonStack'
 
 type Tab = 'trip' | 'parking' | 'train' | 'bus'
 
@@ -31,6 +32,15 @@ export default function BusinessTripPage({ onBack, initialTripResult }: Business
   const [selectedPlanRank, setSelectedPlanRank] = useState<number | null>(
     initialTripResult && initialTripResult.plans.length > 0 ? 1 : null
   )
+
+  // LocationPicker 열려 있을 때 뒤로가기 버튼으로 닫기
+  useEffect(() => {
+    if (!showPicker) return
+    return pushBackHandler(() => {
+      setShowPicker(false)
+      return true
+    })
+  }, [showPicker])
 
   // 주차장
   const [parkings, setParkings] = useState<PublicParking[]>([])

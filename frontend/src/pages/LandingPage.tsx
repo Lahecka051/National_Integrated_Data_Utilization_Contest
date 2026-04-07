@@ -1,28 +1,34 @@
 import { useState, useRef, useEffect } from 'react'
-import type { Errand, ChatMessage, TimeConstraint, ConsultantAction, RecommendationResponse } from '../types'
+import type { Errand, ChatMessage, TimeConstraint, ConsultantAction, RecommendationResponse, TripConsultantState, TripRecommendResponse } from '../types'
 import { sendConsultantMessage } from '../utils/api'
+import { useLocation } from '../contexts/LocationContext'
 
 interface LandingPageProps {
   onStartMode1: () => void
   onStartMode2: () => void
+  onStartBusinessTrip: () => void
   llmAvailable: boolean
   onRecommendationReady: (result: RecommendationResponse, errands: Errand[]) => void
+  onTripRecommendationReady: (result: TripRecommendResponse) => void
 }
 
 const SUGGESTIONS = [
   '은행 가서 통장 만들고 싶어요',
-  '주민센터에서 서류 떼야 해요',
+  '다음 주 수요일 부산 출장, 오전 9시 이후 출발',
   '오후 2시부터 4시까지 비어요',
+  '내일 대전 가는데 기차로만 갈래요',
 ]
 
-export default function LandingPage({ onStartMode1, onStartMode2, llmAvailable, onRecommendationReady }: LandingPageProps) {
+export default function LandingPage({ onStartMode1, onStartMode2, onStartBusinessTrip, llmAvailable, onRecommendationReady, onTripRecommendationReady }: LandingPageProps) {
+  const { location } = useLocation()
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: '안녕하세요! 하루짜기 일정 상담사입니다. 어떤 용무를 처리하실 건가요? 비는 시간대가 있다면 함께 알려주세요!' },
+    { role: 'assistant', content: '안녕하세요! 하루짜기 통합 AI 상담사입니다. 반차 일정도, 출장 계획도 모두 도와드릴 수 있어요. 어떤 일을 처리하실 건가요?' },
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [sessionErrands, setSessionErrands] = useState<Errand[]>([])
   const [timeConstraint, setTimeConstraint] = useState<TimeConstraint | undefined>()
+  const [tripState, setTripState] = useState<TripConsultantState>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -40,13 +46,23 @@ export default function LandingPage({ onStartMode1, onStartMode2, llmAvailable, 
     setLoading(true)
 
     try {
-      const res = await sendConsultantMessage(updated, sessionErrands, timeConstraint)
+      const res = await sendConsultantMessage(
+        updated,
+        sessionErrands,
+        timeConstraint,
+        tripState,
+        location.lat,
+        location.lng,
+      )
 
       if (res.updated_errands?.length > 0) {
         setSessionErrands(res.updated_errands)
       }
       if (res.updated_time_constraint) {
         setTimeConstraint(res.updated_time_constraint)
+      }
+      if (res.updated_trip_state) {
+        setTripState(res.updated_trip_state)
       }
 
       const assistantMsg: ChatMessage = {
@@ -65,6 +81,12 @@ export default function LandingPage({ onStartMode1, onStartMode2, llmAvailable, 
   const handleViewResult = (action: ConsultantAction) => {
     if (action.recommendation) {
       onRecommendationReady(action.recommendation, sessionErrands)
+    }
+  }
+
+  const handleViewTripResult = (action: ConsultantAction) => {
+    if (action.trip_recommendation) {
+      onTripRecommendationReady(action.trip_recommendation)
     }
   }
 
@@ -105,21 +127,36 @@ export default function LandingPage({ onStartMode1, onStartMode2, llmAvailable, 
             </div>
 
             {/* 세션 상태 칩 */}
-            {(sessionErrands.length > 0 || timeConstraint) && (
+            {(sessionErrands.length > 0 || timeConstraint || tripState.destination || tripState.date) && (
               <div className="px-5 py-2.5 bg-violet-50 border-b border-violet-100 flex flex-wrap gap-1.5 items-center">
                 {sessionErrands.map((e, i) => (
                   <span key={i} className="px-2.5 py-1 bg-violet-100 text-violet-700 text-xs rounded-full font-medium">
-                    {e.task_name}
+                    🏛️ {e.task_name}
                   </span>
                 ))}
                 {timeConstraint?.start_time && timeConstraint?.end_time && (
                   <span className="px-2.5 py-1 bg-indigo-100 text-indigo-700 text-xs rounded-full font-medium">
-                    {timeConstraint.start_time}~{timeConstraint.end_time}
+                    🕐 {timeConstraint.start_time}~{timeConstraint.end_time}
                   </span>
                 )}
                 {timeConstraint?.start_date && (
                   <span className="px-2.5 py-1 bg-indigo-100 text-indigo-700 text-xs rounded-full font-medium">
-                    {timeConstraint.start_date} 이후
+                    📅 {timeConstraint.start_date} 이후
+                  </span>
+                )}
+                {tripState.destination && (
+                  <span className="px-2.5 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                    📍 {tripState.destination}
+                  </span>
+                )}
+                {tripState.date && (
+                  <span className="px-2.5 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                    📅 {tripState.date}
+                  </span>
+                )}
+                {tripState.earliest_departure && (
+                  <span className="px-2.5 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                    🕐 {tripState.earliest_departure} 이후
                   </span>
                 )}
               </div>
@@ -171,10 +208,10 @@ export default function LandingPage({ onStartMode1, onStartMode2, llmAvailable, 
                     </div>
                   )}
 
-                  {/* 추천 결과 카드 */}
+                  {/* 반차 추천 결과 카드 */}
                   {(msg.action?.action_type === 'recommend_triggered' || msg.action?.action_type === 'request_recommend') && msg.action.recommendation && (
                     <div className="mt-2 ml-10 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                      <p className="text-xs font-bold text-amber-700 mb-2">추천 결과</p>
+                      <p className="text-xs font-bold text-amber-700 mb-2">🏛️ 반차 추천 결과</p>
                       <div className="space-y-2">
                         {msg.action.recommendation.recommendations.slice(0, 3).map((rec, j) => (
                           <div key={j} className="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 text-sm border border-amber-100">
@@ -192,6 +229,56 @@ export default function LandingPage({ onStartMode1, onStartMode2, llmAvailable, 
                       >
                         상세 결과 보기
                       </button>
+                    </div>
+                  )}
+
+                  {/* 출장 추천 결과 카드 */}
+                  {msg.action?.action_type === 'trip_request_recommend' && msg.action.trip_recommendation && msg.action.trip_recommendation.plans.length > 0 && (
+                    <div className="mt-2 ml-10 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                      <p className="text-xs font-bold text-blue-700 mb-2">✈️ 출장 플랜 추천</p>
+                      <div className="space-y-2">
+                        {msg.action.trip_recommendation.plans.slice(0, 3).map((plan, j) => {
+                          const modeIcon = plan.schedule.mode === 'train' ? '🚄' : '🚌'
+                          const h = Math.floor(plan.total_duration_min / 60)
+                          const m = plan.total_duration_min % 60
+                          const dur = h > 0 ? `${h}시간${m > 0 ? ` ${m}분` : ''}` : `${m}분`
+                          return (
+                            <div key={j} className="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 text-sm border border-blue-100">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${j === 0 ? 'bg-blue-500' : 'bg-gray-400'}`}>{plan.rank}</span>
+                                <span className="text-gray-700 truncate">
+                                  {modeIcon} {plan.origin_hub.name} → {plan.destination_hub.name}
+                                </span>
+                              </div>
+                              <span className="font-bold text-gray-900 flex-shrink-0 ml-2">{dur}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <button
+                        onClick={() => handleViewTripResult(msg.action!)}
+                        className="mt-3 w-full py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 transition-colors"
+                      >
+                        출장 플랜 상세 보기
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 출장 정보 일부 파싱 카드 */}
+                  {msg.action?.action_type === 'trip_info_parsed' && msg.action.trip_fields && (
+                    <div className="mt-2 ml-10 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                      <p className="text-xs font-bold text-blue-700 mb-1.5">출장 정보 일부 파악</p>
+                      <div className="flex flex-wrap gap-1.5 text-xs">
+                        {msg.action.trip_fields.destination && (
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-lg">📍 {msg.action.trip_fields.destination}</span>
+                        )}
+                        {msg.action.trip_fields.date && (
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-lg">📅 {msg.action.trip_fields.date}</span>
+                        )}
+                        {msg.action.trip_fields.earliest_departure && (
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-lg">🕐 {msg.action.trip_fields.earliest_departure}</span>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -257,18 +344,65 @@ export default function LandingPage({ onStartMode1, onStartMode2, llmAvailable, 
         </section>
       )}
 
-      {/* 기존 버튼 - 직접 선택 모드 */}
-      <section className="max-w-2xl mx-auto mb-12">
-        <div className="text-center mb-4">
-          <p className="text-sm text-gray-400">{llmAvailable ? '또는 직접 용무를 선택할 수도 있어요' : '용무를 선택하고 최적 일정을 추천받으세요'}</p>
+      {/* 모드 선택 - 반차 / 출장 2개 카드 */}
+      <section className="max-w-4xl mx-auto mb-14">
+        <div className="text-center mb-6">
+          <p className="text-sm text-gray-400">{llmAvailable ? '또는 목적에 맞는 모드를 직접 선택하세요' : '목적에 맞는 모드를 선택하세요'}</p>
         </div>
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <button onClick={onStartMode1} className="btn-primary text-base px-8 py-3.5 shadow-lg shadow-primary-200">
-            최적 날짜 찾기
-          </button>
-          <button onClick={onStartMode2} className="btn-secondary text-base px-8 py-3.5 bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200 hover:border-gray-300">
-            날짜 지정 최적 경로
-          </button>
+        <div className="grid md:grid-cols-2 gap-5">
+          {/* 반차 모드 */}
+          <div className="group bg-white rounded-2xl border-2 border-primary-100 hover:border-primary-400 hover:shadow-xl hover:shadow-primary-100 p-6 transition-all">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-12 h-12 bg-primary-600 rounded-xl flex items-center justify-center text-2xl">
+                🏛️
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">반차 모드</h3>
+                <p className="text-xs text-gray-500">민원·은행·우체국 동선 최적화</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 mb-5 leading-relaxed">
+              직장인이 반차/연차를 쓰고 여러 공공 업무를 한 번에 끝낼 수 있도록,
+              대기·이동시간이 가장 적은 날짜와 순서를 찾아드립니다.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={onStartMode1}
+                className="w-full py-3 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 transition-colors shadow-md shadow-primary-100"
+              >
+                최적 날짜 찾기
+              </button>
+              <button
+                onClick={onStartMode2}
+                className="w-full py-2.5 bg-primary-50 text-primary-700 rounded-xl text-sm font-medium hover:bg-primary-100 transition-colors"
+              >
+                날짜 지정 최적 경로
+              </button>
+            </div>
+          </div>
+
+          {/* 출장 모드 */}
+          <div className="group bg-white rounded-2xl border-2 border-indigo-100 hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-100 p-6 transition-all">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center text-2xl">
+                ✈️
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">출장 모드</h3>
+                <p className="text-xs text-gray-500">공공주차장 + 기차역/터미널 혼잡도</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 mb-5 leading-relaxed">
+              출장자를 위한 모드. 현재 위치 근처 공공주차장 실시간 가용 정보와
+              기차역·고속버스터미널 혼잡도를 한눈에 확인할 수 있습니다.
+            </p>
+            <button
+              onClick={onStartBusinessTrip}
+              className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-violet-700 transition-all shadow-md shadow-indigo-100"
+            >
+              출장 모드 시작
+            </button>
+          </div>
         </div>
       </section>
 

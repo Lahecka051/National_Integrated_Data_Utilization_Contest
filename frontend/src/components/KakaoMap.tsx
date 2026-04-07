@@ -8,6 +8,25 @@ declare global {
   }
 }
 
+// Kakao SDK 로드 대기 — 최대 10초 폴링
+function waitForKakaoSdk(timeoutMs: number = 10000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const start = Date.now()
+    const check = () => {
+      if (window.kakao?.maps?.load) {
+        resolve(true)
+        return
+      }
+      if (Date.now() - start > timeoutMs) {
+        resolve(false)
+        return
+      }
+      setTimeout(check, 100)
+    }
+    check()
+  })
+}
+
 const TYPE_MARKER_COLORS: Record<string, string> = {
   '민원실': '#3b82f6',
   '은행': '#f59e0b',
@@ -16,15 +35,14 @@ const TYPE_MARKER_COLORS: Record<string, string> = {
 
 const SEGMENT_COLORS = ['#3b82f6', '#f59e0b', '#22c55e', '#ef4444', '#8b5cf6']
 
-const START_LAT = 35.5396
-const START_LNG = 129.3114
-
 export interface KakaoMapHandle {
   focusOn: (lat: number, lng: number, level?: number) => void
 }
 
 interface KakaoMapProps {
   visits: FacilityVisit[]
+  originLat: number
+  originLng: number
 }
 
 function formatDuration(seconds: number): string {
@@ -40,24 +58,39 @@ function formatDistance(meters: number): string {
   return `${(meters / 1000).toFixed(1)}km`
 }
 
-const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(({ visits }, ref) => {
+const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(({ visits, originLat, originLng }, ref) => {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<any>(null)
   const [mapReady, setMapReady] = useState(false)
+  const [sdkFailed, setSdkFailed] = useState(false)
   const [segments, setSegments] = useState<RouteSegment[]>([])
 
   useEffect(() => {
-    if (!window.kakao?.maps) return
-    window.kakao.maps.load(() => setMapReady(true))
+    let cancelled = false
+    waitForKakaoSdk().then(ok => {
+      if (cancelled) return
+      if (!ok) {
+        setSdkFailed(true)
+        return
+      }
+      try {
+        window.kakao.maps.load(() => {
+          if (!cancelled) setMapReady(true)
+        })
+      } catch {
+        setSdkFailed(true)
+      }
+    })
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
     if (visits.length === 0) return
     const coords = visits.map(v => ({ lat: v.facility.lat, lng: v.facility.lng }))
-    fetchRoute(coords)
+    fetchRoute(coords, originLat, originLng)
       .then(data => setSegments(data.segments))
       .catch(() => setSegments([]))
-  }, [visits])
+  }, [visits, originLat, originLng])
 
   useImperativeHandle(ref, () => ({
     focusOn: (lat: number, lng: number, level: number = 3) => {
@@ -74,13 +107,13 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(({ visits }, ref) => 
     const { kakao } = window
     const center = visits.length > 0
       ? new kakao.maps.LatLng(visits[0].facility.lat, visits[0].facility.lng)
-      : new kakao.maps.LatLng(START_LAT, START_LNG)
+      : new kakao.maps.LatLng(originLat, originLng)
 
     const map = new kakao.maps.Map(mapRef.current, { center, level: 5 })
     mapInstanceRef.current = map
 
     const bounds = new kakao.maps.LatLngBounds()
-    const startPos = new kakao.maps.LatLng(START_LAT, START_LNG)
+    const startPos = new kakao.maps.LatLng(originLat, originLng)
     bounds.extend(startPos)
 
     new kakao.maps.CustomOverlay({
@@ -119,13 +152,26 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(({ visits }, ref) => 
     }
 
     if (visits.length > 0) map.setBounds(bounds, 50, 50, 50, 50)
-  }, [visits, mapReady, segments])
+  }, [visits, mapReady, segments, originLat, originLng])
 
-  if (!window.kakao?.maps) {
+  if (sdkFailed) {
+    return (
+      <div className="w-full h-80 rounded-xl overflow-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col items-center justify-center px-6 text-center">
+        <div className="text-5xl mb-3">🗺️</div>
+        <p className="text-sm font-bold text-gray-700 mb-2">카카오맵을 불러올 수 없습니다</p>
+        <div className="text-xs text-gray-500 space-y-1">
+          <p>• Kakao Developers → 플랫폼 → Web에 <code className="bg-white px-1 rounded">http://localhost:5173</code> 등록 확인</p>
+          <p>• Kakao Developers → 제품 설정 → 카카오맵 ON 확인</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!mapReady) {
     return (
       <div className="w-full h-80 rounded-xl overflow-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col items-center justify-center">
-        <div className="text-5xl mb-3">🗺️</div>
-        <p className="text-xs text-gray-400 mt-3">카카오맵 API 키 설정 후 실제 지도가 표시됩니다</p>
+        <div className="w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-xs text-gray-500">지도 로드 중...</p>
       </div>
     )
   }

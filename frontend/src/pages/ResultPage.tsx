@@ -4,6 +4,7 @@ import RecommendationCard from '../components/RecommendationCard'
 import Timeline from '../components/Timeline'
 import KakaoMap, { type KakaoMapHandle } from '../components/KakaoMap'
 import CongestionChart from '../components/CongestionChart'
+import { useLocation } from '../contexts/LocationContext'
 
 interface ResultPageProps {
   result: RecommendationResponse
@@ -13,11 +14,8 @@ interface ResultPageProps {
   onSetAlarm?: (date: string, time: string, label: string) => void
 }
 
-// 서울역 좌표
-const START_LAT = 35.5396
-const START_LNG = 129.3114
-
 export default function ResultPage({ result, errands, onReset, mode, onSetAlarm }: ResultPageProps) {
+  const { location } = useLocation()
   const [selectedIdx, setSelectedIdx] = useState(0)
   const selected = result.recommendations[selectedIdx]
   const mapRef = useRef<KakaoMapHandle>(null)
@@ -25,7 +23,7 @@ export default function ResultPage({ result, errands, onReset, mode, onSetAlarm 
   const handleVisitClick = (index: number) => {
     if (!mapRef.current || !selected) return
     if (index === -1) {
-      mapRef.current.focusOn(START_LAT, START_LNG, 3)
+      mapRef.current.focusOn(location.lat, location.lng, 3)
     } else if (index < selected.visits.length) {
       const visit = selected.visits[index]
       mapRef.current.focusOn(visit.facility.lat, visit.facility.lng, 3)
@@ -101,7 +99,7 @@ export default function ResultPage({ result, errands, onReset, mode, onSetAlarm 
                 경로 지도
               </span>
             </h3>
-            <KakaoMap ref={mapRef} visits={selected.visits} />
+            <KakaoMap ref={mapRef} visits={selected.visits} originLat={location.lat} originLng={location.lng} />
           </div>
         </div>
       )}

@@ -131,6 +131,85 @@ async def get_directions(
     return None
 
 
+async def geocode_address(address: str) -> dict | None:
+    """
+    주소 → 좌표 변환 (카카오 Local 주소검색 API)
+    Returns: {address, road_address, lat, lng} or None
+    """
+    if not address:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://dapi.kakao.com/v2/local/search/address.json",
+                params={"query": address},
+                headers=_headers(),
+            )
+            if resp.status_code != 200:
+                return None
+            docs = resp.json().get("documents", [])
+            if not docs:
+                # 주소 검색 실패 시 키워드 검색으로 폴백
+                resp2 = await client.get(
+                    "https://dapi.kakao.com/v2/local/search/keyword.json",
+                    params={"query": address, "size": "1"},
+                    headers=_headers(),
+                )
+                if resp2.status_code != 200:
+                    return None
+                docs2 = resp2.json().get("documents", [])
+                if not docs2:
+                    return None
+                d = docs2[0]
+                return {
+                    "address": d.get("address_name", address),
+                    "road_address": d.get("road_address_name", ""),
+                    "lat": float(d.get("y", "0")),
+                    "lng": float(d.get("x", "0")),
+                }
+            doc = docs[0]
+            road = doc.get("road_address") or {}
+            return {
+                "address": doc.get("address_name", address),
+                "road_address": road.get("address_name", ""),
+                "lat": float(doc.get("y", "0")),
+                "lng": float(doc.get("x", "0")),
+            }
+    except Exception:
+        return None
+
+
+async def reverse_geocode(lat: float, lng: float) -> dict | None:
+    """
+    좌표 → 주소 변환 (카카오 Local 좌표→주소 API)
+    Returns: {address, road_address, region_1depth, region_2depth, region_3depth}
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://dapi.kakao.com/v2/local/geo/coord2address.json",
+                params={"x": str(lng), "y": str(lat)},
+                headers=_headers(),
+            )
+            if resp.status_code != 200:
+                return None
+            docs = resp.json().get("documents", [])
+            if not docs:
+                return None
+            d = docs[0]
+            addr = d.get("address") or {}
+            road = d.get("road_address") or {}
+            return {
+                "address": addr.get("address_name", ""),
+                "road_address": road.get("address_name", ""),
+                "region_1depth": addr.get("region_1depth_name", ""),
+                "region_2depth": addr.get("region_2depth_name", ""),
+                "region_3depth": addr.get("region_3depth_name", ""),
+            }
+    except Exception:
+        return None
+
+
 async def get_multi_stop_route(
     start: tuple[float, float],
     stops: list[tuple[float, float]],

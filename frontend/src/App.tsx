@@ -1,14 +1,16 @@
-import { useState, useRef, useEffect } from 'react'
-import type { AppStep, AppMode, Errand, HalfDayType, RecommendationResponse } from './types'
+import { useState, useEffect } from 'react'
+import type { AppStep, AppMode, Errand, HalfDayType, RecommendationResponse, TripRecommendResponse } from './types'
 import LandingPage from './pages/LandingPage'
 import ErrandSelectPage from './pages/ErrandSelectPage'
 import DateSelectPage from './pages/DateSelectPage'
 import LoadingPage from './pages/LoadingPage'
 import ResultPage from './pages/ResultPage'
+import BusinessTripPage from './pages/BusinessTripPage'
 import Header from './components/Header'
-import ChatBot from './components/ChatBot'
 import NotificationSettings from './components/NotificationSettings'
+import LocationPicker from './components/LocationPicker'
 import { useNotification } from './hooks/useNotification'
+import { useLocation } from './contexts/LocationContext'
 import { fetchRecommendation, fetchOptimizeSlot, fetchLLMStatus } from './utils/api'
 
 export interface AlarmInfo {
@@ -23,12 +25,15 @@ export default function App() {
   const [mode, setMode] = useState<AppMode>('mode1')
   const [errands, setErrands] = useState<Errand[]>([])
   const [result, setResult] = useState<RecommendationResponse | null>(null)
+  const [initialTripResult, setInitialTripResult] = useState<TripRecommendResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
   const [alarm, setAlarm] = useState<AlarmInfo | null>(null)
   const [llmAvailable, setLlmAvailable] = useState(false)
 
   const notification = useNotification()
+  const { location } = useLocation()
 
   useEffect(() => {
     fetchLLMStatus().then(s => setLlmAvailable(s.available)).catch(() => {})
@@ -44,6 +49,18 @@ export default function App() {
     setStep('errand-select')
   }
 
+  const handleStartBusinessTrip = () => {
+    setMode('business-trip')
+    setInitialTripResult(null)
+    setStep('business-trip')
+  }
+
+  const handleChatTripRecommendation = (tripResult: TripRecommendResponse) => {
+    setInitialTripResult(tripResult)
+    setMode('business-trip')
+    setStep('business-trip')
+  }
+
   const handleSubmitErrands = async (selectedErrands: Errand[]) => {
     setErrands(selectedErrands)
     setError(null)
@@ -55,7 +72,7 @@ export default function App() {
 
     setStep('loading')
     try {
-      const data = await fetchRecommendation(selectedErrands)
+      const data = await fetchRecommendation(selectedErrands, location.lat, location.lng)
       setResult(data)
       setStep('result')
     } catch (e) {
@@ -68,7 +85,7 @@ export default function App() {
     setStep('loading')
     setError(null)
     try {
-      const data = await fetchOptimizeSlot(errands, date, halfDay)
+      const data = await fetchOptimizeSlot(errands, date, halfDay, location.lat, location.lng)
       setResult(data)
       setStep('result')
     } catch (e) {
@@ -136,12 +153,17 @@ export default function App() {
     setMode('mode1')
     setErrands([])
     setResult(null)
+    setInitialTripResult(null)
     setError(null)
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-      <Header onLogoClick={handleReset} onSettingsClick={() => setShowSettings(true)} />
+      <Header
+        onLogoClick={handleReset}
+        onSettingsClick={() => setShowSettings(true)}
+        onLocationClick={() => setShowLocationPicker(true)}
+      />
       <main className="max-w-5xl mx-auto px-4 pb-20">
         {/* 활성 알람 배너 */}
         {alarm && step === 'landing' && (
@@ -175,9 +197,14 @@ export default function App() {
           <LandingPage
             onStartMode1={handleStartMode1}
             onStartMode2={handleStartMode2}
+            onStartBusinessTrip={handleStartBusinessTrip}
             llmAvailable={llmAvailable}
             onRecommendationReady={handleChatRecommendation}
+            onTripRecommendationReady={handleChatTripRecommendation}
           />
+        )}
+        {step === 'business-trip' && (
+          <BusinessTripPage onBack={handleReset} initialTripResult={initialTripResult} />
         )}
         {step === 'errand-select' && (
           <ErrandSelectPage
@@ -200,12 +227,8 @@ export default function App() {
         )}
       </main>
 
-      {/* AI 챗봇 (결과 페이지 전용) */}
-      {llmAvailable && step === 'result' && result && (
-        <ChatBot
-          recommendation={result.recommendations[0]}
-          errands={errands.length > 0 ? errands : undefined}
-        />
+      {showLocationPicker && (
+        <LocationPicker onClose={() => setShowLocationPicker(false)} />
       )}
 
       {showSettings && (

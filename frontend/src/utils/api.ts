@@ -10,7 +10,7 @@ import type {
   ParkingListResponse, PublicParking, TransitHubListResponse, HubCongestion,
   GeocodeResult, ReverseGeocodeResult, HubType,
   TripRequest, TripRecommendResponse, TripConsultantState, TripConsultantChatResponse,
-  OneClickConfirmResponse, NearbyBankOption,
+  OneClickConfirmResponse, NearbyBankOption, NearbyHubOption,
 } from '../types'
 
 // === 외부 API 클라이언트 ===
@@ -28,9 +28,60 @@ export async function searchAddresses(query: string, maxResults?: number): Promi
   return kakaoSearchAddresses(query, maxResults)
 }
 import { fetchNearbyParking, fetchParkingDetail } from '../external/parkingApi'
-import { fetchNearbyTrainStations } from '../external/railApi'
+import { fetchNearbyTrainStations, type TransitHub } from '../external/railApi'
 import { fetchNearbyBusTerminals } from '../external/busTerminalApi'
 import { fetchHolidayInfo } from '../external/publicDataApi'
+
+export type { TransitHub }
+
+/**
+ * 지역/역명 → 해당 지역의 기차역/버스터미널 목록 반환.
+ * 출장 모드의 도착지 선택용 — 사용자가 입력한 키워드를 geocoding해서
+ * 근처의 허브(기차역/버스터미널)만 필터링해서 반환.
+ */
+export async function searchDestinationHubs(
+  query: string,
+  options: { wantTrain: boolean; wantBus: boolean; radius?: number } = { wantTrain: true, wantBus: true },
+): Promise<{ trains: TransitHub[]; buses: TransitHub[]; centerLat: number; centerLng: number } | null> {
+  const q = query.trim()
+  if (!q) return null
+
+  // 1) 지역/키워드를 좌표로 변환
+  let geo = await kakaoGeocode(q)
+  if (!geo) geo = await kakaoGeocode(`${q}역`)
+  if (!geo) return null
+
+  const centerLat = geo.lat
+  const centerLng = geo.lng
+  const radius = options.radius ?? 15000
+
+  const result = {
+    trains: [] as TransitHub[],
+    buses: [] as TransitHub[],
+    centerLat,
+    centerLng,
+  }
+
+  // 2) 근처 허브 검색 (병렬)
+  const tasks: Promise<void>[] = []
+  if (options.wantTrain) {
+    tasks.push(
+      fetchNearbyTrainStations(centerLat, centerLng, radius)
+        .then(r => { result.trains = r.hubs.slice(0, 10) })
+        .catch(() => { /* noop */ }),
+    )
+  }
+  if (options.wantBus) {
+    tasks.push(
+      fetchNearbyBusTerminals(centerLat, centerLng, radius)
+        .then(r => { result.buses = r.hubs.slice(0, 10) })
+        .catch(() => { /* noop */ }),
+    )
+  }
+  await Promise.all(tasks)
+
+  return result
+}
 
 // === 비즈니스 로직 (로컬 서비스) ===
 import { recommendBestSlots } from '../lib/optimizer'
@@ -302,11 +353,73 @@ export async function sendConsultantMessage(
       : '근처 은행을 찾지 못했어요. 위치를 확인하거나 다시 시도해주세요.'
   }
 
-  // 추천 실행 (은행 게이트가 발동하지 않은 경우에만)
+  // === 게이트 1: 출장 모드에서 access_mode(차량/대중교통)가 정해지지 않으면 먼저 선택 받기 ===
+  let accessModeReply: string | undefined
+  const needsAccessModeSelection =
+    shouldRecommend &&
+    intent === 'business_trip' &&
+    !!updatedTripState.destination &&
+    !!updatedTripState.date &&
+    !updatedTripState.access_mode &&  // 사용자가 명시 안 한 경우
+    originLat != null && originLng != null
+
+  if (needsAccessModeSelection) {
+    accessModeReply = `${updatedTripState.destination}로 ${updatedTripState.date} 출장 일정을 찾아드릴게요. 출발역·터미널까지 어떻게 이동하시겠어요?`
+  }
+
+  // === 게이트 2: 출장 모드에서 destination이 있으면 허브(기차역/터미널)를 사용자가 직접 골라야 함 ===
+  // 수동 폼과 동일하게 목적지 결과는 반드시 기차역/버스터미널로 귀결되어야 함.
+  let nearbyHubOptions: NearbyHubOption[] | undefined
+  let hubReply: string | undefined
+  const needsHubSelection =
+    shouldRecommend &&
+    intent === 'business_trip' &&
+    !needsAccessModeSelection &&  // access_mode 게이트가 먼저 통과되어야 함
+    !!updatedTripState.destination &&
+    !(updatedTripState as any).destination_hub &&  // 이미 허브가 선택된 경우가 아닐 때
+    originLat != null && originLng != null
+
+  if (needsHubSelection) {
+    try {
+      const wantTrain = !updatedTripState.modes || updatedTripState.modes.includes('train')
+      const wantBus = !updatedTripState.modes || updatedTripState.modes.includes('expbus')
+      const hubResult = await searchDestinationHubs(updatedTripState.destination!, {
+        wantTrain,
+        wantBus,
+        radius: 15000,
+      })
+      if (hubResult) {
+        const combined: NearbyHubOption[] = []
+        // 기차역 먼저, 그 다음 터미널
+        for (const h of hubResult.trains.slice(0, 5)) {
+          combined.push({
+            id: h.id, name: h.name, type: 'train_station',
+            address: h.address, distance: h.distance, lat: h.lat, lng: h.lng,
+          })
+        }
+        for (const h of hubResult.buses.slice(0, 5)) {
+          combined.push({
+            id: h.id, name: h.name, type: 'bus_terminal',
+            address: h.address, distance: h.distance, lat: h.lat, lng: h.lng,
+          })
+        }
+        nearbyHubOptions = combined
+      } else {
+        nearbyHubOptions = []
+      }
+    } catch {
+      nearbyHubOptions = []
+    }
+    hubReply = nearbyHubOptions && nearbyHubOptions.length > 0
+      ? `${updatedTripState.destination} 근처 기차역·터미널을 찾았어요. 어디로 도착할지 선택해주세요.`
+      : `${updatedTripState.destination} 근처에서 기차역이나 버스터미널을 찾지 못했어요. 다른 지역이나 역 이름으로 다시 말씀해주세요.`
+  }
+
+  // 추천 실행 (은행 게이트/access_mode 게이트/허브 게이트가 발동하지 않은 경우에만)
   let recommendationResult: RecommendationResponse | undefined
   let tripRecommendationResult: TripRecommendResponse | undefined
 
-  if (shouldRecommend && !needsBankSelection) {
+  if (shouldRecommend && !needsBankSelection && !needsAccessModeSelection && !needsHubSelection) {
     if (intent === 'half_day' && updatedErrands.length > 0 && originLat != null && originLng != null) {
       const rec = await recommendBestSlots(updatedErrands, originLat, originLng, 4, updatedTc as any)
       recommendationResult = {
@@ -320,10 +433,12 @@ export async function sendConsultantMessage(
       updatedTripState.destination && updatedTripState.date &&
       originLat != null && originLng != null
     ) {
+      // 출장: destination_hub가 이미 있다고 가정 (허브 게이트를 통과한 상태)
       const trip = await recommendTrip({
         origin_lat: originLat,
         origin_lng: originLng,
         destination: updatedTripState.destination,
+        destination_hub: (updatedTripState as any).destination_hub,
         date: updatedTripState.date,
         earliest_departure: updatedTripState.earliest_departure || '08:00',
         parking_preference: updatedTripState.parking_preference || 'near_hub',
@@ -338,9 +453,29 @@ export async function sendConsultantMessage(
   if (needsBankSelection) {
     actionType = 'bank_selection_needed'
   }
+  if (needsAccessModeSelection) {
+    actionType = 'trip_access_mode_needed'
+  }
+  if (needsHubSelection) {
+    actionType = 'trip_hub_selection_needed'
+  }
+
+  // 출장 추천이 성공적으로 실행된 경우: 선택 필드 누락 시 더 정확한 추천을 위한 안내를 답변에 부착
+  let tripOptionalHint: string | undefined
+  if (tripRecommendationResult && intent === 'business_trip') {
+    const missingOptional: string[] = []
+    if (!updatedTripState.earliest_departure) missingOptional.push('출발 시각')
+    if (!updatedTripState.modes || updatedTripState.modes.length === 0) missingOptional.push('교통수단(기차/고속버스)')
+    if (updatedTripState.access_mode === 'drive' && !updatedTripState.parking_preference) missingOptional.push('주차 위치')
+    if (missingOptional.length > 0) {
+      tripOptionalHint = `\n\n💡 ${missingOptional.join(', ')} 등을 추가로 알려주시면 더 정확하게 추천해드릴 수 있어요.`
+    }
+  }
+  const baseReply = accessModeReply || hubReply || bankReply || result.text || ''
+  const finalReply = tripOptionalHint ? baseReply + tripOptionalHint : baseReply
 
   return {
-    reply: bankReply || result.text || '',
+    reply: finalReply,
     action: {
       action_type: actionType as any,
       intent: intent as any,
@@ -350,6 +485,7 @@ export async function sendConsultantMessage(
       nearby_banks: nearbyBankOptions,
       trip_fields: result.trip_fields || undefined,
       trip_recommendation: tripRecommendationResult,
+      nearby_hubs: nearbyHubOptions,
     },
     updated_errands: updatedErrands,
     updated_time_constraint: updatedTc,
@@ -446,6 +582,9 @@ export async function fetchTripRecommend(req: TripRequest): Promise<TripRecommen
     origin_lat: req.origin_lat,
     origin_lng: req.origin_lng,
     destination: req.destination,
+    destination_lat: req.destination_lat,
+    destination_lng: req.destination_lng,
+    destination_hub: req.destination_hub,
     date: req.date,
     earliest_departure: req.earliest_departure,
     parking_preference: req.parking_preference,

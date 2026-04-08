@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { PublicParking, TransitHub, HubCongestion, HubType, TripPlan, TripRecommendResponse, ParkingPreference, TransportMode, AccessMode } from '../types'
+import type { PublicParking, TransitHub, HubCongestion, HubType, TripPlan, TripRecommendResponse, ParkingPreference, TransportMode, AccessMode, SelectedDestinationHub } from '../types'
 import {
   fetchNearbyParking, fetchNearbyTrainStations, fetchNearbyBusTerminals, fetchHubCongestion,
   fetchTripRecommend,
@@ -9,7 +9,7 @@ import ParkingList from '../components/ParkingList'
 import TransitHubCard from '../components/TransitHubCard'
 import LocationPicker from '../components/LocationPicker'
 import TripPlanForm from '../components/TripPlanForm'
-import TripPlanCard from '../components/TripPlanCard'
+import TripPlanCompactCard from '../components/TripPlanCompactCard'
 import TripTimeline from '../components/TripTimeline'
 import TripRouteMap from '../components/TripRouteMap'
 import { pushBackHandler } from '../lib/backButtonStack'
@@ -19,9 +19,10 @@ type Tab = 'trip' | 'parking' | 'train' | 'bus'
 interface BusinessTripPageProps {
   onBack: () => void
   initialTripResult?: TripRecommendResponse | null
+  onSetAlarm?: (date: string, time: string, label: string) => void
 }
 
-export default function BusinessTripPage({ onBack, initialTripResult }: BusinessTripPageProps) {
+export default function BusinessTripPage({ onBack, initialTripResult, onSetAlarm }: BusinessTripPageProps) {
   const { location } = useLocation()
   const [tab, setTab] = useState<Tab>('trip')
   const [showPicker, setShowPicker] = useState(false)
@@ -75,7 +76,7 @@ export default function BusinessTripPage({ onBack, initialTripResult }: Business
         setBusHubs(busRes.hubs)
       } catch (e) {
         if (cancelled) return
-        setError('데이터를 불러오지 못했습니다. 백엔드가 실행 중인지 확인해주세요.')
+        setError('데이터를 불러오지 못했습니다. 네트워크 상태나 API 키 설정을 확인해주세요.')
       } finally {
         if (!cancelled) {
           setParkingLoading(false)
@@ -104,6 +105,7 @@ export default function BusinessTripPage({ onBack, initialTripResult }: Business
 
   const handleTripSubmit = async (params: {
     destination: string
+    destinationHub: SelectedDestinationHub
     date: string
     earliestDeparture: string
     parkingPreference: ParkingPreference
@@ -119,6 +121,7 @@ export default function BusinessTripPage({ onBack, initialTripResult }: Business
         origin_lat: location.lat,
         origin_lng: location.lng,
         destination: params.destination,
+        destination_hub: params.destinationHub,
         date: params.date,
         earliest_departure: params.earliestDeparture,
         parking_preference: params.parkingPreference,
@@ -130,7 +133,7 @@ export default function BusinessTripPage({ onBack, initialTripResult }: Business
         setSelectedPlanRank(1)
       }
     } catch (e) {
-      setError('여행 추천 요청에 실패했습니다. 백엔드가 실행 중인지 확인해주세요.')
+      setError('여행 추천 요청에 실패했습니다. 네트워크 상태나 API 키 설정을 확인해주세요.')
     } finally {
       setTripLoading(false)
     }
@@ -139,6 +142,14 @@ export default function BusinessTripPage({ onBack, initialTripResult }: Business
   const currentHubs = tab === 'train' ? trainHubs : tab === 'bus' ? busHubs : []
   const hubType: HubType | null = tab === 'train' ? 'train_station' : tab === 'bus' ? 'bus_terminal' : null
   const selectedPlan = tripResult?.plans.find(p => p.rank === selectedPlanRank) || null
+
+  const handleSetTripAlarm = () => {
+    if (!selectedPlan || !onSetAlarm) return
+    const { dep_date, dep_time, vehicle_name } = selectedPlan.schedule
+    const hubName = selectedPlan.origin_hub.name
+    const label = `${hubName}에서 ${vehicle_name} 탑승`
+    onSetAlarm(dep_date, dep_time, label)
+  }
 
   return (
     <div className="pt-6 pb-10">
@@ -200,12 +211,34 @@ export default function BusinessTripPage({ onBack, initialTripResult }: Business
       {/* 컨텐츠 */}
       {tab === 'trip' && (
         <div className="space-y-5">
-          <TripPlanForm onSubmit={handleTripSubmit} loading={tripLoading} />
+          {/* 결과가 없거나 아직 추천 전이면 폼만 표시 */}
+          {(!tripResult || tripResult.plans.length === 0) && (
+            <TripPlanForm onSubmit={handleTripSubmit} loading={tripLoading} />
+          )}
 
-          {tripResult && (
-            <>
+          {/* 결과가 없는데 API 응답만 받은 경우 (빈 결과) */}
+          {tripResult && tripResult.plans.length === 0 && (
+            <div className="text-center py-10 text-gray-400">
+              <p className="text-sm">추천할 수 있는 플랜이 없습니다.</p>
+              <p className="text-xs mt-1">목적지나 출발 시각을 바꿔보세요.</p>
+            </div>
+          )}
+
+          {/* 결과 전용 뷰 — 반차 모드 결과 화면과 유사한 구조 */}
+          {tripResult && tripResult.plans.length > 0 && (
+            <div className="pt-2">
+              {/* 상단 요약 */}
+              <div className="text-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  출장 추천 결과
+                </h2>
+                <p className="text-gray-500 text-sm">
+                  {tripResult.destination_resolved} 방문에 최적인 플랜 {tripResult.plans.length}개를 찾았습니다
+                </p>
+              </div>
+
               {tripResult.note && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 flex items-start gap-2">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 flex items-start gap-2 mb-4">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-600 mt-0.5 flex-shrink-0">
                     <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
                   </svg>
@@ -213,53 +246,93 @@ export default function BusinessTripPage({ onBack, initialTripResult }: Business
                 </div>
               )}
 
-              {tripResult.plans.length === 0 ? (
-                <div className="text-center py-10 text-gray-400">
-                  <p className="text-sm">추천할 수 있는 플랜이 없습니다.</p>
-                  <p className="text-xs mt-1">목적지나 출발 시각을 바꿔보세요.</p>
-                </div>
-              ) : (
-                <>
-                  <div className="space-y-3">
-                    <p className="text-xs text-gray-500">
-                      총 {tripResult.plans.length}개 플랜 · 목적지 {tripResult.destination_resolved}
-                    </p>
-                    {tripResult.plans.map(plan => (
-                      <TripPlanCard
-                        key={plan.rank}
-                        plan={plan}
-                        expanded={selectedPlanRank === plan.rank}
-                        onClick={() => setSelectedPlanRank(plan.rank === selectedPlanRank ? null : plan.rank)}
-                      />
-                    ))}
+              {/* 추천 플랜 카드 — 가로 스크롤 (반차 모드와 동일한 compact 디자인, 왼쪽 끝 flush) */}
+              <div className="flex gap-2 mb-6 pt-2 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
+                {tripResult.plans.map(plan => (
+                  <div
+                    key={plan.rank}
+                    className="flex-shrink-0 snap-start first:ml-0"
+                    style={{ width: 'calc((100vw - 2.5rem) / 3)', minWidth: '100px', maxWidth: '130px' }}
+                  >
+                    <TripPlanCompactCard
+                      plan={plan}
+                      isSelected={selectedPlanRank === plan.rank}
+                      onClick={() => setSelectedPlanRank(plan.rank)}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* 선택된 플랜 상세 */}
+              {selectedPlan && (
+                <div className="grid md:grid-cols-2 gap-6 mb-8">
+                  {/* 타임라인 */}
+                  <div className="card">
+                    <h3 className="text-lg font-bold text-gray-900 mb-4">
+                      <span className="inline-flex items-center gap-2">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10" />
+                          <polyline points="12 6 12 12 16 14" />
+                        </svg>
+                        출장 일정
+                      </span>
+                    </h3>
+                    <TripTimeline
+                      plan={selectedPlan}
+                      originAddress={tripResult.origin_address}
+                      destinationResolved={tripResult.destination_resolved}
+                    />
                   </div>
 
-                  {selectedPlan && (
-                    <div className="pt-3 space-y-4">
-                      <div>
-                        <p className="text-xs font-bold text-gray-500 mb-2">선택한 플랜 지도</p>
-                        <TripRouteMap
-                          plan={selectedPlan}
-                          originLat={location.lat}
-                          originLng={location.lng}
-                          destinationLat={tripResult.destination_lat}
-                          destinationLng={tripResult.destination_lng}
-                          destinationLabel={tripResult.destination_resolved}
-                        />
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-gray-500 mb-2">선택한 플랜 상세</p>
-                        <TripTimeline
-                          plan={selectedPlan}
-                          originAddress={tripResult.origin_address}
-                          destinationResolved={tripResult.destination_resolved}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </>
+                  {/* 경로 지도 */}
+                  <div className="card">
+                    <h3 className="text-lg font-bold text-gray-900 mb-4">
+                      <span className="inline-flex items-center gap-2">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                          <circle cx="12" cy="10" r="3" />
+                        </svg>
+                        경로 지도
+                      </span>
+                    </h3>
+                    <TripRouteMap
+                      plan={selectedPlan}
+                      originLat={location.lat}
+                      originLng={location.lng}
+                      destinationLat={tripResult.destination_lat}
+                      destinationLng={tripResult.destination_lng}
+                      destinationLabel={tripResult.destination_resolved}
+                    />
+                  </div>
+                </div>
               )}
-            </>
+
+              {/* 하단 버튼 — 홈으로 + 알람 설정 (반차 모드와 동일 구조) */}
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
+                <button
+                  onClick={() => {
+                    setTripResult(null)
+                    setSelectedPlanRank(null)
+                    onBack()
+                  }}
+                  className="btn-secondary"
+                >
+                  다른 조건으로 다시 검색하기
+                </button>
+                {selectedPlan && onSetAlarm && (
+                  <button
+                    onClick={handleSetTripAlarm}
+                    className="btn-primary flex items-center gap-2"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                    </svg>
+                    알람 설정하기
+                  </button>
+                )}
+              </div>
+            </div>
           )}
         </div>
       )}

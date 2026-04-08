@@ -79,7 +79,7 @@ export default function App() {
       setResult(data)
       setStep('result')
     } catch (e) {
-      setError('서버 연결에 실패했습니다. 백엔드가 실행 중인지 확인해주세요.')
+      setError('추천을 가져오지 못했습니다. 네트워크 상태나 API 키 설정을 확인해주세요.')
       setStep('errand-select')
     }
   }
@@ -92,7 +92,7 @@ export default function App() {
       setResult(data)
       setStep('result')
     } catch (e) {
-      setError('서버 연결에 실패했습니다. 백엔드가 실행 중인지 확인해주세요.')
+      setError('추천을 가져오지 못했습니다. 네트워크 상태나 API 키 설정을 확인해주세요.')
       setStep('date-select')
     }
   }
@@ -159,6 +159,13 @@ export default function App() {
     setInitialTripResult(null)
     setError(null)
   }
+
+  // step 변경 시 페이지 최상단으로 스크롤 (랜딩 복귀 시 맨 위 보장)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    }
+  }, [step])
 
   // Android 하드웨어 뒤로가기 버튼 처리
   useEffect(() => {
@@ -231,7 +238,7 @@ export default function App() {
           />
         )}
         {step === 'business-trip' && (
-          <BusinessTripPage onBack={handleReset} initialTripResult={initialTripResult} />
+          <BusinessTripPage onBack={handleReset} initialTripResult={initialTripResult} onSetAlarm={handleSetAlarm} />
         )}
         {step === 'errand-select' && (
           <ErrandSelectPage

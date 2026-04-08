@@ -285,6 +285,18 @@ export async function recommendTrip(params: {
   origin_lat: number
   origin_lng: number
   destination: string
+  /** 선택적 사전 해석된 좌표. 제공되면 geocoding 단계 건너뜀. */
+  destination_lat?: number
+  destination_lng?: number
+  /** 사용자가 직접 선택한 도착 허브 — 제공되면 허브 검색도 건너뜀 */
+  destination_hub?: {
+    id: string
+    name: string
+    type: 'train_station' | 'bus_terminal'
+    address: string
+    lat: number
+    lng: number
+  }
   date: string
   earliest_departure?: string
   parking_preference?: 'near_hub' | 'near_home'
@@ -292,32 +304,55 @@ export async function recommendTrip(params: {
   access_mode?: 'drive' | 'transit'
 }): Promise<any> {
   const {
-    origin_lat, origin_lng, destination, date,
+    origin_lat, origin_lng, destination,
+    destination_lat: prefLat, destination_lng: prefLng,
+    destination_hub: destHubInput,
+    date,
     earliest_departure = '08:00',
     parking_preference = 'near_hub',
     modes = ['train', 'expbus'],
     access_mode = 'drive',
   } = params
-  const wantTrain = modes.includes('train')
-  const wantBus = modes.includes('expbus')
 
-  // 1. 목적지 해석
-  let geo = await geocodeAddress(destination)
-  if (!geo) geo = await geocodeAddress(`${destination}역`)
-  if (!geo) {
-    return {
-      plans: [],
-      destination_resolved: '',
-      destination_lat: 0,
-      destination_lng: 0,
-      origin_address: '',
-      has_realtime_schedule: false,
-      note: `목적지 '${destination}'을(를) 찾을 수 없습니다.`,
+  // 도착 허브가 미리 선택된 경우: 해당 허브 타입에 맞게 modes를 강제
+  // (예: 기차역이면 train만, 터미널이면 expbus만)
+  const effectiveModes: ('train' | 'expbus')[] = destHubInput
+    ? (destHubInput.type === 'train_station' ? ['train'] : ['expbus'])
+    : modes
+  const wantTrain = effectiveModes.includes('train')
+  const wantBus = effectiveModes.includes('expbus')
+
+  // 1. 목적지 해석 — 우선순위: destHubInput > prefLat/prefLng > geocoding
+  let destLat: number
+  let destLng: number
+  let destResolved: string
+
+  if (destHubInput) {
+    destLat = destHubInput.lat
+    destLng = destHubInput.lng
+    destResolved = destHubInput.name
+  } else if (typeof prefLat === 'number' && typeof prefLng === 'number') {
+    destLat = prefLat
+    destLng = prefLng
+    destResolved = destination
+  } else {
+    let geo = await geocodeAddress(destination)
+    if (!geo) geo = await geocodeAddress(`${destination}역`)
+    if (!geo) {
+      return {
+        plans: [],
+        destination_resolved: '',
+        destination_lat: 0,
+        destination_lng: 0,
+        origin_address: '',
+        has_realtime_schedule: false,
+        note: `목적지 '${destination}'을(를) 찾을 수 없습니다.`,
+      }
     }
+    destLat = geo.lat
+    destLng = geo.lng
+    destResolved = geo.road_address || geo.address || destination
   }
-  const destLat = geo.lat
-  const destLng = geo.lng
-  const destResolved = geo.road_address || geo.address || destination
 
   // 2. 출발지 주소
   const originRev = await reverseGeocode(origin_lat, origin_lng)
@@ -325,7 +360,37 @@ export async function recommendTrip(params: {
 
   // 3. 허브 수집
   const origHubs = await findHubsNear(origin_lat, origin_lng, wantTrain, wantBus)
-  const destHubs = await resolveDestinationHubs(destination, destLat, destLng, wantTrain, wantBus)
+  // 도착 허브: 사용자가 직접 선택했으면 그것만 사용, 아니면 근처 허브 검색
+  const destHubs: { trains: TransitHub[]; buses: TransitHub[] } = destHubInput
+    ? {
+        trains: destHubInput.type === 'train_station'
+          ? [{
+              id: destHubInput.id,
+              name: destHubInput.name,
+              type: 'train_station',
+              address: destHubInput.address,
+              lat: destHubInput.lat,
+              lng: destHubInput.lng,
+              distance: 0,
+              category: '',
+              phone: '',
+            }]
+          : [],
+        buses: destHubInput.type === 'bus_terminal'
+          ? [{
+              id: destHubInput.id,
+              name: destHubInput.name,
+              type: 'bus_terminal',
+              address: destHubInput.address,
+              lat: destHubInput.lat,
+              lng: destHubInput.lng,
+              distance: 0,
+              category: '',
+              phone: '',
+            }]
+          : [],
+      }
+    : await resolveDestinationHubs(destination, destLat, destLng, wantTrain, wantBus)
 
   if (origHubs.trains.length === 0 && origHubs.buses.length === 0) {
     return {

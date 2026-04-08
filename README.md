@@ -73,7 +73,7 @@
 ### 3.1 반차 모드 1 — 최적 날짜 찾기 (Mode 1)
 
 - **입력**: 처리할 용무 (민원실·은행·우체국 중 복수 선택), 사용자 위치
-- **처리**: 향후 4주(28일) × 평일(약 20일) × 3가지 반차 유형(오전/오후/연차) = **약 60개 슬롯 시뮬레이션**
+- **처리**: 가능한 모든 평일 × 3가지 반차 유형(오전/오후/연차) 슬롯 시뮬레이션 — 사용자가 지정한 시간 제약(`time_constraint`)이 있으면 그 범위 내만, 없으면 기본 탐색 범위 적용
 - **출력**: 총 소요시간이 가장 짧은 상위 3개 슬롯 + 가장 느린 슬롯(비추천)
 - **특징**: 요일별 대기 패턴(월·금 혼잡, 화·목 한산), 월말·월초 은행 혼잡, 비 예보 페널티, 공휴일·주말 자동 제외
 
@@ -85,16 +85,18 @@
 
 ### 3.3 출장 모드 — 주차장·허브·대중교통 통합 플래너
 
-- **입력**: 목적지 도시/역명, 출발 날짜, 출발 희망 시각, 이동수단 선호, 허브 접근 수단
+- **입력**: 지역(도시명 또는 역명) → **자동완성 검색으로 기차역/버스터미널 중 하나를 직접 선택**, 출발 날짜, 출발 희망 시각, 이동수단 선호, 허브 접근 수단
 - **처리**:
-  1. 카카오 Geocode로 목적지 해석
-  2. 출발지·목적지 주변 기차역(Top 3) + 고속버스터미널(Top 2) 수집
-  3. **TAGO 열차/고속버스 실시간 시간표** 우선 시도, 실패 시 거리 기반 추정 폴백
-  4. **허브 접근 수단**에 따른 분기:
+  1. 사용자가 지역을 입력하면 Kakao Geocode로 좌표 변환 후 **반경 15km 내 기차역/버스터미널 목록을 그룹 드롭다운으로 제시**
+  2. 사용자가 목록에서 특정 허브를 탭 → 그 허브가 도착지로 확정 (수동 폼·챗봇 둘 다 동일)
+  3. 출발지 주변 기차역(Top 3) + 고속버스터미널(Top 2) 수집
+  4. **TAGO 열차/고속버스 실시간 시간표** 우선 시도, 실패 시 거리 기반 추정 폴백
+  5. **허브 접근 수단**에 따른 분기:
      - **차량 모드**: 공공주차장 실시간 가용(서울 열린데이터광장) + 전국주차장 표준 메타데이터 매칭
      - **대중교통 모드**: 지하철·버스 거리 기반 추정(평균 22km/h + 환승여유 10분)
-  5. 0~100점 점수화(소요시간·주차 가용·실시간 여부·허브 거리)
-- **출력**: 상위 5개 플랜 카드 + 선택한 플랜의 타임라인 + 카카오 지도
+  6. 0~100점 점수화(소요시간·주차 가용·실시간 여부·허브 거리)
+- **출력**: 반차 모드와 **동일한 결과 화면 레이아웃** — 가로 스크롤 추천 카드(상위 5개) + 선택한 플랜의 타임라인 + 카카오 지도 + 알람 설정 버튼
+- **도착지 제한**: 임의 주소(예: 건물명, 상세주소)는 받지 않음 — **반드시 기차역 또는 버스터미널**만 도착지로 선택 가능 (수동 폼·챗봇 일관성 보장)
 - **부가 탭**: 주차장 목록·기차역 목록·터미널 목록 + **허브별 실시간 혼잡도 점수** (시간대·요일·공휴일·보행자 신호 대기·버스 좌석 잔여율 반영)
 
 ### 3.4 통합 AI 상담사 (반차 + 출장 자동 의도 감지)
@@ -106,8 +108,15 @@
   - **반차 필드**: 용무 리스트(10종 매핑), 시간 제약(시작/종료), 날짜 제약(특정 1일 또는 이후 범위)
   - **출장 필드**: 목적지, 날짜, 출발시각, 주차 위치, 교통수단, 허브 접근 수단
   - **운영 가능성 체크**: 요일·공휴일·운영시간 기반으로 주말·공휴일 요청은 자동 거절하고 가까운 평일 대안 제시
-- **출력**: 대화 + 구조화된 액션 카드 (파싱된 용무 뱃지, 시간 제약, 추천 결과 3개, 은행 선택 카드, 출장 플랜 3개)
-- **게이트 패턴**: 은행 용무가 있는데 지점이 특정되지 않은 경우 **추천을 차단**하고 근처 은행 6개 카드를 먼저 제시, 사용자가 지점을 고른 뒤 자동 재추천
+- **출력**: 대화 + 구조화된 액션 카드 (파싱된 용무 뱃지, 시간 제약, 추천 결과 3개, 은행 선택 카드, 허브 접근 수단 선택 카드, 출장 허브 선택 카드, 출장 플랜 3개)
+- **게이트 패턴 (수동 폼과의 일관성 보장)**:
+  1. **반차 - 은행 선택 게이트**: 은행 용무가 있는데 지점이 특정되지 않은 경우 **추천을 차단**하고 근처 은행 6개 카드를 먼저 제시, 사용자가 지점을 고른 뒤 자동 재추천
+  2. **출장 - access_mode 게이트**: 사용자가 차량/대중교통 중 어느 것으로 허브까지 갈지 명시하지 않으면 **`🚗 차량 + 주차장` / `🚇 대중교통` 2지선다 카드**를 먼저 띄워서 선택받음
+  3. **출장 - 허브 선택 게이트**: 사용자가 지역(예: "부산")만 말하면 해당 지역의 **기차역 + 버스터미널 그룹 카드**(최대 각 5개)를 띄워서 선택받음. 수동 폼과 완전히 동일한 결과만 가능하도록 강제
+- **필수/선택 필드 분리**:
+  - **필수**: destination + date + access_mode — 이 3개가 모두 채워지면 추천 실행
+  - **선택**: earliest_departure, modes, parking_preference — 기본값(08:00, [train/expbus], near_hub)으로 자동 채움
+  - **안내 로직**: 필수만 채워지고 선택 필드가 비어 있으면 결과와 함께 "💡 출발 시각·교통수단·주차 위치 등을 추가로 알려주시면 더 정확하게 추천해드릴 수 있어요" 한 줄 힌트 자동 부착. 모든 선택 필드까지 다 채워지면 힌트 없이 결과만 간결하게 제시
 
 ### 3.5 원클릭 서비스 (데모 단계 mock)
 
@@ -117,9 +126,10 @@
 
 ### 3.6 부가 편의 기능
 
-- **GPS/수동 주소 선택**: 최초 진입 시 GPS 요청, 거부 시 울산 남구 기본 위치, 언제든 주소 검색 또는 좌표 입력으로 변경 (localStorage 영속)
-- **Android Capacitor 연동**: 네이티브 뒤로가기 버튼, 지오로케이션, 로컬 알림(반차 당일 10분 전 출발 알림)
+- **GPS/수동 주소 선택**: 최초 진입 시 GPS 요청 — 거부 시 **부산 경성대학교** 기본 위치, 언제든 주소 검색 또는 좌표 입력으로 변경 (localStorage 영속). 이전 버전의 기본 위치(울산 남구)가 저장된 경우 자동 마이그레이션
+- **Android Capacitor 네이티브 연동**: 네이티브 뒤로가기 버튼, **Capacitor Geolocation 플러그인**(OS 레벨 권한 팝업), 로컬 알림(반차·출장 출발 10분 전 알림)
 - **결과 공유 가능한 타임라인 & 지도**: 실제 카카오 내비 API로 호출한 경로 좌표를 카카오 지도에 폴리라인 렌더
+- **반차·출장 결과 화면 일관성**: 두 모드 모두 동일한 레이아웃 사용 — 상단 요약 → 가로 스크롤 추천 카드 → 타임라인 + 지도 2열 → 혼잡도 차트 → 알람 설정 버튼 → "다시 검색" 버튼(누르면 메인 화면 맨 위로 이동)
 
 ---
 
@@ -440,35 +450,104 @@ base  = max(0, 100 - (total_duration_min - 60) × 100/180)
    │ ─ "알람 설정" → @capacitor/local-notifications
 ```
 
-### 9.2 시나리오 B — 폼으로 출장 플랜 (대중교통 모드)
+### 9.2 시나리오 B — 수동 폼으로 출장 플랜 (도착지 허브 자동완성)
 
 ```
-사용자:
-  목적지 = "부산"
-  날짜 = 2026-04-15
-  출발 시각 = 09:00
-  허브 접근 수단 = 대중교통 (🚇)
-  교통수단 = 기차 + 고속버스 (둘 다)
+사용자가 "부산" 입력
    │
    ▼
-BusinessTripPage.handleTripSubmit → fetchTripRecommend(req)
+TripPlanForm 디바운스 400ms 후 searchDestinationHubs("부산", {train,bus}) 호출
+   │ ─ Kakao Geocode → 부산 좌표
+   │ ─ fetchNearbyTrainStations(좌표, 15km) + fetchNearbyBusTerminals(좌표, 15km) 병렬
+   │
+   ▼
+드롭다운 표시:
+   🚄 기차역 섹션  — 부산역, 부전역, 구포역, ...
+   🚌 버스터미널 섹션 — 부산종합버스터미널, ...
+   │
+   ▼ (사용자가 "부산역" 탭)
+   │
+선택된 허브(SelectedDestinationHub) 저장 → 입력창 우측 ✓ 체크 아이콘
+   │
+   ▼ (추가로 날짜, 출발시각, 허브 이동수단 등 선택 후 "추천 받기" 탭)
+   │
+BusinessTripPage.handleTripSubmit → fetchTripRecommend({
+   destination, destination_hub, date, earliest_departure, access_mode, ...
+})
    │
    ▼
 recommendTrip (lib/tripRecommender.ts)
-   │ [1] Kakao Geocode → 부산 좌표
-   │ [2] 출발지 주변 기차역 Top 3 + 터미널 Top 2
-   │ [3] 부산 주변 대표 기차역 1 + 터미널 1
-   │ [4] 각 (출발, 도착, 수단) 조합에 대해:
+   │ [1] destination_hub가 제공됨 → geocoding/허브검색 단계 스킵
+   │ [2] 허브의 좌표/이름/타입을 직접 사용
+   │ [3] 출발지 주변 기차역 Top 3 + 터미널 Top 2 수집
+   │ [4] 도착 허브는 사용자가 고른 하나만 사용
+   │     (type='train_station'면 train 플랜만, 'bus_terminal'이면 expbus 플랜만)
+   │ [5] 각 (출발, 도착, 수단) 조합에 대해:
    │     ├ TAGO 실시간 시간표 시도 → 실패 시 거리 추정
-   │     └ access_mode='transit' → 주차장 스킵,
-   │        estimateTransitMinutes(distKm) 로 허브 접근시간 계산
-   │ [5] 0~100점 scorePlan, buildReasons
-   │ [6] 상위 5개 반환
+   │     └ access_mode에 따라 주차장 검색 or 대중교통 추정
+   │ [6] 0~100점 scorePlan, buildReasons
+   │ [7] 상위 5개 반환
    │
    ▼
-출력:
-   - 플랜 카드 5개 (각 카드: 🚇 대중교통 이동 + 🚄 탑승 + 도착 시각)
-   - 선택한 플랜의 TripTimeline + TripRouteMap
+결과 화면 (반차 모드와 동일한 레이아웃):
+   - 상단 요약 ("출장 추천 결과")
+   - 가로 스크롤 compact 카드 5개 (TripPlanCompactCard)
+   - 선택한 플랜의 TripTimeline + TripRouteMap (2열 그리드)
+   - "다른 조건으로 다시 검색하기" + "알람 설정하기" 버튼
+```
+
+### 9.3 시나리오 C — AI 상담사로 출장 (2단계 게이트)
+
+```
+사용자 입력: "다음 주 월요일 부산 출장"
+   │
+   ▼
+[1] sendConsultantMessage → unifiedConsultantChat (Gemini)
+   │ ─ intent=business_trip
+   │ ─ trip_fields={destination:"부산", date:"2026-04-14",
+   │                 access_mode:null, ...}
+   │ ─ should_recommend=true
+   │
+   ▼
+[2] 게이트 1: access_mode 게이트
+   │ ─ destination ✓, date ✓, 하지만 access_mode 없음
+   │ ─ actionType = 'trip_access_mode_needed'
+   │ ─ 추천 실행 건너뜀
+   │
+   ▼
+[3] 챗봇에 "🧭 출발역까지 어떻게 이동하시겠어요?" 카드
+   │ ─ [🚗 차량 + 주차장]  [🚇 대중교통]
+   │
+   ▼ (사용자가 🚗 차량 탭)
+   │
+[4] handleSelectAccessMode('drive')
+   │ ─ tripState.access_mode = 'drive'
+   │ ─ sendConsultantMessage 재호출 (같은 대화 맥락 + 업데이트된 state)
+   │
+   ▼
+[5] 게이트 2: 허브 선택 게이트
+   │ ─ searchDestinationHubs("부산", {train, bus}) 호출
+   │ ─ actionType = 'trip_hub_selection_needed'
+   │
+   ▼
+[6] 챗봇에 "✈️ 어느 기차역·터미널로 도착하시겠어요?" 카드
+   │ ─ 🚄 기차역: 부산역, 부전역, 구포역, ...
+   │ ─ 🚌 버스터미널: 부산종합버스터미널, ...
+   │
+   ▼ (사용자가 "부산역" 탭)
+   │
+[7] handleSelectHub(hub)
+   │ ─ LLM 우회, fetchTripRecommend 직접 호출
+   │ ─ destination_hub=hub (허브 검색 단계도 건너뜀)
+   │
+   ▼
+[8] 추천 결과 카드 + "출장 플랜 상세 보기" 버튼
+   │ ─ 필수 3개(destination, date, access_mode) 다 채워짐 → 결과 표시
+   │ ─ 선택 필드(earliest_departure, modes, parking_preference) 비어 있음
+   │   → 답변 말미에 "💡 ... 추가로 알려주시면 더 정확한 추천" 힌트 부착
+   │
+   ▼
+[9] 사용자가 "출장 플랜 상세 보기" 클릭 → BusinessTripPage 결과 전용 뷰
 ```
 
 ---
@@ -477,12 +556,14 @@ recommendTrip (lib/tripRecommender.ts)
 
 | 화면 | 파일 | 주요 기능 |
 |---|---|---|
-| **랜딩** | `LandingPage.tsx` | 히어로, AI 상담사 챗봇, 반차/출장 모드 카드, 작동 원리, 활용 데이터 출처 |
+| **랜딩** | `LandingPage.tsx` | 히어로, AI 상담사 챗봇(은행/허브 접근/허브 선택 게이트 카드 포함), 반차/출장 모드 카드, 작동 원리, 활용 데이터 출처 |
 | **용무 선택** (반차) | `ErrandSelectPage.tsx` | 10종 용무 체크박스, 은행 용무 선택 시 근처 은행 지점 선택 모달, 총 처리시간 요약 |
 | **날짜 선택** (반차 모드2) | `DateSelectPage.tsx` | 캘린더 + 반차 유형 라디오 |
 | **로딩** | `LoadingPage.tsx` | 시뮬레이션 진행 중 애니메이션 |
-| **결과** (반차) | `ResultPage.tsx` | 추천 카드 3개 + 비추천 1개, 타임라인, 카카오 경로 지도, 혼잡도 차트, 원클릭 서비스 배너, 알람 설정 |
-| **출장** | `BusinessTripPage.tsx` | 탭 4개 (여행 계획 / 주차장 / 기차역 / 터미널), 플랜 폼, 플랜 카드, 플랜 타임라인, 경로 지도 |
+| **결과** (반차) | `ResultPage.tsx` | 상단 요약 → 가로 스크롤 추천 카드 3개(+ 비추천 1개) → 타임라인 + 카카오 지도 2열 → 혼잡도 차트 → 원클릭 서비스 배너 → 알람 설정/다시 검색 버튼. Timeline의 출발지는 `originLabel` prop으로 사용자 현재 위치 주소 동적 표시 |
+| **출장** | `BusinessTripPage.tsx` | 탭 4개 (여행 계획 / 주차장 / 기차역 / 터미널). 여행 계획 탭에서는 도착지 자동완성 검색(기차역/터미널 전용 그룹 드롭다운) + 허브 접근 수단 선택 + 교통수단 선택. 결과가 생성되면 **반차 모드와 동일한 레이아웃의 결과 전용 뷰**로 전환 (상단 요약 → `TripPlanCompactCard` 가로 스크롤 → `TripTimeline` + `TripRouteMap` 2열 → 알람 설정/다시 검색 버튼) |
+
+> **결과 화면 UX 일관성**: 반차와 출장 결과 화면은 카드 크기·가로 스크롤 패턴·상세 2열 그리드·하단 버튼 배치가 동일합니다. "다시 검색하기" 버튼은 두 모드 모두 **메인 화면 최상단**으로 이동합니다(`step` 변경 시 `window.scrollTo(0,0)` 자동 호출).
 
 ---
 
@@ -493,6 +574,8 @@ National_Integrated_Data_Utilization_Contest/
 ├─ README.md                ← 이 파일
 ├─ .env.example             ← 인증키 템플릿
 ├─ .env                     ← 실제 인증키 (gitignore)
+├─ app-release.apk          ← 빌드된 릴리즈 APK (gitignore)
+├─ app-debug.apk            ← 빌드된 디버그 APK (gitignore)
 │
 ├─ frontend/                ← 실제 빌드·배포 대상
 │  ├─ package.json
@@ -500,28 +583,46 @@ National_Integrated_Data_Utilization_Contest/
 │  ├─ capacitor.config.ts   ← Android 빌드 설정
 │  ├─ tailwind.config.js
 │  ├─ index.html            ← 카카오맵 SDK 포함
+│  ├─ android/              ← Capacitor로 생성된 Android 네이티브 프로젝트
+│  │  ├─ keystore.properties ← 릴리즈 서명 설정 (gitignore)
+│  │  └─ app/
+│  │     ├─ build.gradle    ← signingConfigs 포함
+│  │     ├─ release.keystore ← 릴리즈 서명 키 (gitignore)
+│  │     └─ src/main/
+│  │        └─ AndroidManifest.xml ← 위치/알림 권한 선언
 │  └─ src/
 │     ├─ main.tsx
-│     ├─ App.tsx            ← 단계 라우팅 (step state)
+│     ├─ App.tsx            ← 단계 라우팅 (step state), 스크롤 리셋 훅
 │     ├─ index.css
 │     ├─ config/
 │     │  └─ apiKeys.ts      ← 인증키 주입 (gitignore)
 │     ├─ contexts/
-│     │  └─ LocationContext.tsx
+│     │  └─ LocationContext.tsx ← Capacitor Geolocation 네이티브 연동 + 기본 위치 마이그레이션
 │     ├─ hooks/
 │     │  └─ useNotification.ts
 │     ├─ pages/
-│     │  ├─ LandingPage.tsx
+│     │  ├─ LandingPage.tsx      ← 챗봇 + 3개 게이트 카드(은행/허브 접근/허브 선택)
 │     │  ├─ ErrandSelectPage.tsx
 │     │  ├─ DateSelectPage.tsx
 │     │  ├─ LoadingPage.tsx
-│     │  ├─ ResultPage.tsx
-│     │  └─ BusinessTripPage.tsx
-│     ├─ components/        ← 재사용 UI (17개)
+│     │  ├─ ResultPage.tsx       ← 반차 결과 전용 뷰
+│     │  └─ BusinessTripPage.tsx ← 출장 탭 + 결과 전용 뷰 (반차와 동일 레이아웃)
+│     ├─ components/        ← 재사용 UI (18개)
+│     │  ├─ RecommendationCard.tsx      ← 반차 compact 카드
+│     │  ├─ TripPlanCompactCard.tsx     ← 출장 compact 카드 (신규, 반차 카드와 동일 스타일)
+│     │  ├─ TripPlanForm.tsx            ← 도착지 허브 자동완성 드롭다운 포함
+│     │  ├─ Timeline.tsx                ← originLabel prop으로 출발지 동적 표시
+│     │  ├─ KakaoMap.tsx / TripRouteMap.tsx
+│     │  ├─ CongestionChart.tsx         ← 범용화된 혼잡도 히트맵
+│     │  ├─ LocationPicker.tsx
+│     │  ├─ OneClickConfirmModal.tsx
+│     │  ├─ NotificationSettings.tsx
+│     │  └─ ... (BackButton, Header, ParkingList, ParkingStatusBadge,
+│     │          TransitHubCard, CongestionGauge, TripTimeline 등)
 │     ├─ lib/               ← 비즈니스 로직 (TS 포팅, 10개)
-│     │  ├─ optimizer.ts
-│     │  ├─ tripRecommender.ts
-│     │  ├─ llmService.ts
+│     │  ├─ optimizer.ts            ← TSP + 슬롯 시뮬레이션
+│     │  ├─ tripRecommender.ts      ← destination_hub 사전 선택 지원
+│     │  ├─ llmService.ts           ← 통합 상담사 (게이트 로직 연동)
 │     │  ├─ facilityFinder.ts
 │     │  ├─ waitTimeModel.ts
 │     │  ├─ transitCongestion.ts
@@ -537,9 +638,9 @@ National_Integrated_Data_Utilization_Contest/
 │     │  ├─ busTerminalApi.ts
 │     │  └─ geminiApi.ts
 │     ├─ types/
-│     │  └─ index.ts        ← 전역 타입 정의
+│     │  └─ index.ts        ← 전역 타입 (SelectedDestinationHub, NearbyHubOption 등)
 │     └─ utils/
-│        └─ api.ts          ← 통합 Facade
+│        └─ api.ts          ← 통합 Facade (searchDestinationHubs 등 게이트 헬퍼 포함)
 │
 └─ backend/                 ← 참조 구현 (레거시/데모 검증용)
    ├─ requirements.txt
@@ -616,14 +717,120 @@ npm run build
 # → frontend/dist/ 에 정적 파일 생성
 ```
 
-### 12.5 Android APK 빌드 (Capacitor)
+### 12.5 Android APK 빌드 (Capacitor + Gradle)
+
+#### 12.5.1 최초 1회 설정 — 네이티브 프로젝트 생성
 
 ```bash
 cd frontend
 npm run build
-npx cap add android      # 최초 1회
+npx cap add android      # frontend/android/ 네이티브 프로젝트 생성
+```
+
+이 단계에서 `frontend/android/app/src/main/AndroidManifest.xml`에 위치·알림 권한이 포함되어 있는지 확인합니다. 본 프로젝트는 Capacitor Geolocation 플러그인과 Local Notifications를 사용하므로 다음 권한이 선언되어 있어야 합니다:
+
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+<uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+```
+
+#### 12.5.2 Debug APK (개발/테스트용, 자동 서명)
+
+```bash
+cd frontend
+npm run build            # TypeScript + Vite 빌드
+npx cap sync android     # dist/ → android/app/src/main/assets/public/
+cd android
+./gradlew assembleDebug
+# → frontend/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+디버그 키로 자동 서명되므로 그대로 폰에 설치 가능:
+```bash
+adb install -r frontend/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+#### 12.5.3 Release APK (배포/공모전 제출용, 직접 서명)
+
+**1) 릴리즈 keystore 생성** (최초 1회 — **절대 커밋 금지, 분실 시 업데이트 불가**)
+
+```bash
+cd frontend/android/app
+keytool -genkey -v \
+  -keystore release.keystore \
+  -alias release \
+  -keyalg RSA -keysize 2048 \
+  -validity 10950 \
+  -storepass <YOUR_PASSWORD> -keypass <YOUR_PASSWORD> \
+  -dname "CN=DayPlanner, OU=DayPlanner, O=DayPlanner, L=Busan, ST=Busan, C=KR"
+```
+
+**2) 서명 설정 파일 생성** `frontend/android/keystore.properties` (`.gitignore`로 보호됨)
+
+```properties
+storeFile=release.keystore
+storePassword=<YOUR_PASSWORD>
+keyAlias=release
+keyPassword=<YOUR_PASSWORD>
+```
+
+**3) `frontend/android/app/build.gradle`의 서명 블록** — 본 프로젝트에는 이미 다음과 같이 설정되어 있습니다:
+
+```gradle
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
+```
+
+**4) Release APK 빌드**
+
+```bash
+cd frontend
+npm run build
 npx cap sync android
-npx cap open android     # Android Studio 열기 → Build → Generate Signed Bundle/APK
+cd android
+./gradlew assembleRelease
+# → frontend/android/app/build/outputs/apk/release/app-release.apk (자동 서명됨)
+```
+
+**5) APK 서명 확인** (선택)
+
+```bash
+$ANDROID_HOME/build-tools/36.1.0/apksigner verify --verbose app-release.apk
+# → "Verified using v2 scheme (APK Signature Scheme v2): true"
+```
+
+설치:
+```bash
+# 기존 debug APK가 설치되어 있다면 먼저 제거 (서명 키가 다르기 때문)
+adb uninstall kr.hatuzzagi.app
+adb install app-release.apk
 ```
 
 ### 12.6 백엔드 (선택, 참조용)
@@ -645,16 +852,63 @@ uvicorn main:app --reload --port 8000
 3. 추천 카드 3개 확인 → "상세 결과 보기" 클릭
 4. 결과 페이지에서 타임라인 + 지도 확인
 
-**출장 모드 시연**
+**출장 모드 시연 (수동 폼)**
 1. 랜딩에서 "출장 모드 시작" 클릭
-2. "여행 계획" 탭에서 목적지 `부산`, 날짜 미래 일자, 허브 접근 수단 `🚇 대중교통` 선택
-3. "추천 받기" 클릭 → 5개 플랜 카드 확인
-4. 플랜 카드 하나 클릭 → 타임라인 + 카카오 지도 확인
+2. "여행 계획" 탭에서 목적지 입력창에 `부산` 입력 → **드롭다운에서 🚄 부산역 선택**
+3. 날짜/출발 시각/허브 접근 수단 (🚗 차량 or 🚇 대중교통)/교통수단 선택
+4. "추천 받기" 클릭 → 가로 스크롤 compact 카드 5개 확인
+5. 카드 하나 탭 → 타임라인 + 카카오 지도 + 알람 설정 버튼 확인
 
-**AI 상담사 출장 시연**
-1. 랜딩 챗봇에 `"다음 주 수요일 부산 출장 기차로, 차 두고 지하철로 갈래요"` 입력
-2. 자동으로 `destination=부산, date=..., modes=[train], access_mode=transit` 파싱
-3. 출장 플랜 카드 메시지로 표시
+**AI 상담사 출장 시연 (2단계 게이트)**
+1. 랜딩 챗봇에 `"다음 주 월요일 부산 출장"` 입력
+2. 🧭 "출발역까지 어떻게 이동하시겠어요?" 카드 → **[🚗 차량]** 탭
+3. ✈️ "어느 기차역·터미널로 도착하시겠어요?" 카드 → **[부산역]** 탭
+4. 결과 카드 + 💡 "출발 시각·교통수단 등을 추가로 알려주시면 더 정확한 추천" 힌트
+5. "출장 플랜 상세 보기" 클릭 → BusinessTripPage 결과 전용 뷰
+
+**AI 상담사 출장 시연 (한 번에 전부 입력)**
+1. 랜딩 챗봇에 `"다음 주 월요일 부산 출장, 오전 9시 이후 KTX로, 차 두고 지하철로 갈래"` 입력
+2. 필수+선택 필드가 전부 파싱됨 → access_mode 게이트 스킵, 허브 선택 카드 바로 등장
+3. 부산역 탭 → 힌트 없이 결과만 깔끔하게 표시
+
+### 12.8 최근 주요 변경점 (Changelog)
+
+#### 기본 위치 & 네이티브 권한
+- **기본 위치 변경**: 울산 남구 → **부산광역시 남구 수영로 309 (경성대학교)** (`35.1374, 129.0997`)
+- **localStorage 마이그레이션**: 기존 사용자의 울산 기본값이 저장되어 있어도 앱 실행 시 자동으로 부산으로 교체 (`LocationContext.tsx`의 `LEGACY_DEFAULT_COORDS` 체크)
+- **Capacitor Geolocation 네이티브 연동**: 기존 `navigator.geolocation` → `@capacitor/geolocation` 플러그인으로 전환, Android OS 레벨 권한 다이얼로그 정상 표시
+- **AndroidManifest 권한 추가**: `ACCESS_COARSE_LOCATION`, `ACCESS_FINE_LOCATION`, `POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM`, `USE_EXACT_ALARM`
+
+#### 출장 모드 도착지 허브 제한
+- **수동 폼**: 도착지 입력 필드에 **자동완성 드롭다운** 추가. 사용자가 지역명을 치면 400ms 디바운스 후 `searchDestinationHubs()` 헬퍼로 🚄 기차역 + 🚌 버스터미널을 그룹 표시, 반드시 하나를 선택해야 제출 가능
+- **챗봇**: 동일한 패턴의 **허브 선택 게이트** 추가. 사용자가 "부산"이라고 말하면 자동으로 근처 기차역/터미널 카드를 띄워 선택받음. 수동 폼과 완전히 동일한 결과만 가능하도록 강제 (임의 주소·건물명으로 결과 생성 불가)
+- **`SelectedDestinationHub` 타입** 및 **`recommendTrip`의 `destination_hub` 파라미터** 추가로 게이트 통과 시 geocoding/허브 재검색 단계 스킵
+
+#### 챗봇 출장 대화 플로우 개선
+- **`trip_access_mode_needed` 게이트 추가**: 필수 3개 필드(destination, date, access_mode) 중 access_mode가 없으면 `🚗 차량 + 주차장` / `🚇 대중교통` 2지선다 카드 자동 표시
+- **필수/선택 필드 분리**:
+  - 필수: destination, date, access_mode (3개 다 채워지면 결과 표시)
+  - 선택: earliest_departure, modes, parking_preference (기본값으로 자동 채움)
+  - 필수만 채워진 경우 결과 말미에 "💡 ... 추가로 알려주시면 더 정확한 추천" 힌트 부착, 선택까지 모두 채워지면 힌트 없이 결과만 간결하게
+
+#### 반차/출장 결과 화면 UX 일관성
+- **`TripPlanCompactCard` 신규 컴포넌트**: 반차 모드 `RecommendationCard`와 동일한 크기·스타일
+- **출장 결과 화면 리팩토링**: 기존 세로 카드 리스트 → 반차 모드와 동일한 **상단 요약 → 가로 스크롤 compact 카드 → 타임라인 + 지도 2열 → 알람 설정/다시 검색 버튼** 레이아웃
+- **"다시 검색하기" 버튼**: 두 모드 모두 메인 화면 최상단으로 이동 (`useEffect`로 `step` 변경 시 `window.scrollTo(0,0)` 자동 호출)
+- **출장 모드 알람 버튼 추가**: 기존 반차 모드에만 있던 알람 설정을 출장 모드에도 적용 (기차/버스 출발 10분 전 알림, `schedule.dep_time` 기준)
+
+#### UI 텍스트 현행화
+- "한 달 시뮬레이션" / "향후 2주간" 같은 기간 제한 표현 제거 → "전체 슬롯 시뮬레이션" / "가능한 모든 반차 슬롯" 등으로 일반화
+- 에러 메시지에서 "백엔드가 실행 중인지 확인해주세요" → "네트워크 상태나 API 키 설정을 확인해주세요" (완전 로컬 모드 반영)
+- Timeline 출발지 표기: 하드코딩 "울산시청" → 동적 `originLabel` prop (기본값 "현재 위치")
+- CongestionChart 제목: "민원실 (울산 남구청)" / "은행 (BNK경남은행 울산시청지점)" → "민원실 평균" / "은행 평균" (범용화)
+- LocationPicker 리셋 버튼: "울산시청으로 초기화" → "부산 경성대학교로 초기화"
+
+#### 릴리즈 APK 빌드 환경
+- `frontend/android/app/release.keystore` 생성 (RSA 2048, 유효기간 10,950일)
+- `frontend/android/keystore.properties` 서명 설정 파일
+- `frontend/android/app/build.gradle`에 `signingConfigs.release` 블록 추가 — `keystore.properties` 존재 시 자동 서명
+- Release APK는 APK Signature Scheme v2로 서명되어 배포 가능
 
 ---
 
@@ -671,7 +925,7 @@ uvicorn main:app --reload --port 8000
 
 ### 13.2 파급 효과
 
-- **지자체 확산성**: 울산 남구 기본 좌표로 개발했지만, 카카오 Local 기반 전국 모든 시·군·구에서 즉시 동작
+- **지자체 확산성**: 부산 경성대학교(남구) 기본 좌표로 개발했지만, 카카오 Local 기반 전국 모든 시·군·구에서 즉시 동작
 - **데이터 가치 증대**: 공공데이터포털의 3종 필수 데이터를 LLM과 결합해 "**원시 데이터 → 의사결정**"으로 변환하는 레퍼런스 사례
 - **취약계층 확장**: 향후 교통약자 이동지원 데이터(7종 중 2번)를 결합하면 장애인·고령자 대리 방문 코디네이션 가능
 

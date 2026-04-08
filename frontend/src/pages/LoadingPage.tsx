@@ -13,7 +13,7 @@ export default function LoadingPage({ errands }: LoadingPageProps) {
         </svg>
       </div>
       <h2 className="text-2xl font-bold text-gray-900 mb-3">최적 날짜를 분석하고 있어요</h2>
-      <p className="text-gray-500 mb-8">향후 2주간 {errands.length}개 용무의 최적 시간을 시뮬레이션 중...</p>
+      <p className="text-gray-500 mb-8">{errands.length}개 용무의 최적 시간을 시뮬레이션 중...</p>
       <div className="max-w-md mx-auto space-y-3">
         <AnalysisStep label="민원실/은행 혼잡도 예측" delay={0} />
         <AnalysisStep label="시설 간 이동시간 산출" delay={300} />

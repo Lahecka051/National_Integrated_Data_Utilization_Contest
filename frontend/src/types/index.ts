@@ -206,10 +206,25 @@ export type ParkingPreference = 'near_hub' | 'near_home'
  */
 export type AccessMode = 'drive' | 'transit'
 
+/** 사용자가 선택한 도착 허브 (기차역 또는 버스터미널) */
+export interface SelectedDestinationHub {
+  id: string
+  name: string
+  type: HubType
+  address: string
+  lat: number
+  lng: number
+}
+
 export interface TripRequest {
   origin_lat: number
   origin_lng: number
   destination: string
+  /** 선택적 목적지 좌표. 제공되면 geocoding 단계를 건너뛰고 바로 사용. */
+  destination_lat?: number
+  destination_lng?: number
+  /** 사용자가 선택한 도착 허브 — 제공되면 허브 검색 단계도 건너뜀 */
+  destination_hub?: SelectedDestinationHub
   date: string                  // YYYY-MM-DD
   earliest_departure: string    // HH:MM
   parking_preference: ParkingPreference
@@ -384,12 +399,25 @@ export type ConsultantActionType =
   | 'bank_selection_needed'
   | 'trip_info_parsed'
   | 'trip_request_recommend'
+  | 'trip_access_mode_needed'
+  | 'trip_hub_selection_needed'
   | 'none'
 
 /** 챗봇 은행 선택 카드용 — sendConsultantMessage가 첨부 */
 export interface NearbyBankOption {
   id: string
   name: string
+  address: string
+  distance: number
+  lat: number
+  lng: number
+}
+
+/** 챗봇 출장 허브 선택 카드용 — 기차역/버스터미널 */
+export interface NearbyHubOption {
+  id: string
+  name: string
+  type: HubType
   address: string
   distance: number
   lat: number
@@ -417,6 +445,8 @@ export interface ConsultantAction {
     access_mode?: AccessMode | null
   }
   trip_recommendation?: TripRecommendResponse
+  /** action_type === 'trip_hub_selection_needed' 일 때, 사용자가 고를 수 있는 기차역/터미널 후보 */
+  nearby_hubs?: NearbyHubOption[]
 }
 
 export interface ConsultantChatResponse {

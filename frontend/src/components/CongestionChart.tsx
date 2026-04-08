@@ -6,7 +6,7 @@
 const DAYS = ['월', '화', '수', '목', '금']
 const HOURS = ['09', '10', '11', '12', '13', '14', '15', '16', '17']
 
-// 통계 모델 (백엔드 wait_time_model.py와 동일한 계산식)
+// 통계 모델 — 공공데이터 기반의 일반 추정 모델 (frontend/src/lib/waitTimeModel.ts와 동일 수식)
 const CIVIL_BASE = 8.5
 const CIVIL_WD = [1.80, 0.90, 1.05, 0.75, 1.40]
 const CIVIL_HR: Record<number, number> = { 9:1.30, 10:1.60, 11:1.80, 12:0.50, 13:0.80, 14:1.10, 15:0.95, 16:0.80, 17:0.60 }
@@ -39,8 +39,8 @@ function getColor(value: number): string {
 export default function CongestionChart() {
   return (
     <div className="space-y-6">
-      <HeatmapGrid title="🏛️ 민원실 (울산 남구청)" data={CIVIL_DATA} subtitle="행정안전부 민원처리 통계 기반" />
-      <HeatmapGrid title="🏦 은행 (BNK경남은행 울산시청지점)" data={BANK_DATA} subtitle="한국은행 금융기관 이용 통계 기반" />
+      <HeatmapGrid title="🏛️ 민원실 평균" data={CIVIL_DATA} subtitle="행정안전부 민원처리 통계 기반 일반 추정" />
+      <HeatmapGrid title="🏦 은행 평균" data={BANK_DATA} subtitle="한국은행 금융기관 이용 통계 기반 일반 추정" />
 
       <div className="flex items-center justify-center gap-3 text-xs text-gray-500">
         <span>한산</span>

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import type { Errand, ChatMessage, TimeConstraint, ConsultantAction, RecommendationResponse, TripConsultantState, TripRecommendResponse, NearbyBankOption } from '../types'
-import { sendConsultantMessage, fetchRecommendation } from '../utils/api'
+import type { Errand, ChatMessage, TimeConstraint, ConsultantAction, RecommendationResponse, TripConsultantState, TripRecommendResponse, NearbyBankOption, NearbyHubOption, AccessMode } from '../types'
+import { sendConsultantMessage, fetchRecommendation, fetchTripRecommend } from '../utils/api'
 import { useLocation } from '../contexts/LocationContext'
 
 interface LandingPageProps {
@@ -154,6 +154,120 @@ export default function LandingPage({ onStartMode1, onStartMode2, onStartBusines
     }
   }
 
+  /**
+   * 사용자가 챗봇의 "허브 이동 수단" 카드에서 차량/대중교통을 선택했을 때.
+   * 1) tripState의 access_mode 업데이트
+   * 2) 사용자 메시지로 선택 기록
+   * 3) sendConsultantMessage를 재호출해서 다음 게이트(허브 선택)로 진행
+   */
+  const handleSelectAccessMode = async (mode: AccessMode) => {
+    if (loading) return
+    setLoading(true)
+
+    const nextTripState: TripConsultantState = { ...tripState, access_mode: mode }
+    setTripState(nextTripState)
+
+    const label = mode === 'drive' ? '차량으로 갈게요' : '대중교통으로 갈게요'
+    const updatedMessages: ChatMessage[] = [
+      ...messages,
+      { role: 'user', content: label },
+    ]
+    setMessages(updatedMessages)
+
+    try {
+      const res = await sendConsultantMessage(
+        updatedMessages,
+        sessionErrands,
+        timeConstraint,
+        nextTripState,
+        location.lat,
+        location.lng,
+      )
+
+      if (res.updated_errands?.length > 0) setSessionErrands(res.updated_errands)
+      if (res.updated_time_constraint) setTimeConstraint(res.updated_time_constraint)
+      if (res.updated_trip_state) setTripState(res.updated_trip_state)
+
+      const assistantMsg: ChatMessage = {
+        role: 'assistant',
+        content: res.reply,
+        action: res.action,
+      }
+      setMessages(prev => [...prev, assistantMsg])
+    } catch {
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: '응답을 생성할 수 없습니다. 다시 시도해주세요.' },
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /**
+   * 사용자가 챗봇의 "출장 허브 선택" 카드에서 기차역/터미널을 클릭했을 때.
+   * 1) 사용자 메시지로 선택 기록
+   * 2) LLM 우회하고 fetchTripRecommend 직접 호출 (destination_hub 포함)
+   * 3) 결과 카드 추가
+   */
+  const handleSelectHub = async (hub: NearbyHubOption) => {
+    if (loading) return
+    if (!tripState.destination || !tripState.date) {
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: '출장 정보가 부족합니다. 목적지와 출발 날짜를 다시 알려주세요.' },
+      ])
+      return
+    }
+    setLoading(true)
+
+    setMessages(prev => [
+      ...prev,
+      { role: 'user', content: `${hub.name}으로 진행해주세요` },
+    ])
+
+    try {
+      const trip = await fetchTripRecommend({
+        origin_lat: location.lat,
+        origin_lng: location.lng,
+        destination: hub.name,
+        destination_hub: {
+          id: hub.id,
+          name: hub.name,
+          type: hub.type,
+          address: hub.address,
+          lat: hub.lat,
+          lng: hub.lng,
+        },
+        date: tripState.date,
+        earliest_departure: tripState.earliest_departure || '08:00',
+        parking_preference: tripState.parking_preference || 'near_hub',
+        modes: tripState.modes || ['train', 'expbus'],
+        access_mode: tripState.access_mode || 'drive',
+      })
+
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `${hub.name}으로 도착하는 플랜을 찾아드릴게요!`,
+          action: {
+            action_type: 'trip_request_recommend',
+            intent: 'business_trip',
+            trip_recommendation: trip,
+          },
+        },
+      ])
+    } catch {
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: '출장 플랜을 가져올 수 없습니다. 다시 시도해주세요.' },
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="pt-8 pb-8">
       {/* Hero */}
@@ -297,6 +411,98 @@ export default function LandingPage({ onStartMode1, onStartMode2, onStartBusines
                     </div>
                   )}
 
+                  {/* 출장 허브 이동 수단 선택 카드 — access_mode 미지정 시 */}
+                  {msg.action?.action_type === 'trip_access_mode_needed' && (
+                    <div className="mt-2 ml-10 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                      <p className="text-xs font-bold text-blue-700 mb-2">🧭 출발역·터미널까지 어떻게 이동하시겠어요?</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          disabled={loading}
+                          onClick={() => handleSelectAccessMode('drive')}
+                          className="text-left bg-white rounded-lg px-3 py-3 text-sm border-2 border-blue-100 hover:border-blue-400 hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <p className="text-lg mb-0.5">🚗</p>
+                          <p className="font-bold text-gray-900">차량 + 주차장</p>
+                          <p className="text-[10px] text-gray-500 mt-0.5">공공주차장에 주차</p>
+                        </button>
+                        <button
+                          disabled={loading}
+                          onClick={() => handleSelectAccessMode('transit')}
+                          className="text-left bg-white rounded-lg px-3 py-3 text-sm border-2 border-blue-100 hover:border-blue-400 hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <p className="text-lg mb-0.5">🚇</p>
+                          <p className="font-bold text-gray-900">대중교통</p>
+                          <p className="text-[10px] text-gray-500 mt-0.5">지하철·시내버스</p>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 출장 허브 선택 카드 — destination이 있지만 구체적인 기차역/터미널이 정해지지 않은 경우 */}
+                  {msg.action?.action_type === 'trip_hub_selection_needed' && msg.action.nearby_hubs && (
+                    <div className="mt-2 ml-10 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                      <p className="text-xs font-bold text-blue-700 mb-2">✈️ 어느 기차역·터미널로 도착하시겠어요?</p>
+                      {msg.action.nearby_hubs.length === 0 ? (
+                        <p className="text-xs text-gray-500 px-2 py-2">근처에서 기차역·터미널을 찾지 못했어요. 다른 지역이나 역 이름으로 다시 말씀해주세요.</p>
+                      ) : (
+                        <>
+                          {/* 기차역 섹션 */}
+                          {msg.action.nearby_hubs.some(h => h.type === 'train_station') && (
+                            <div className="mb-2">
+                              <p className="text-[10px] font-bold text-blue-600 mb-1 px-1">🚄 기차역</p>
+                              <div className="space-y-1.5">
+                                {msg.action.nearby_hubs.filter(h => h.type === 'train_station').map(hub => (
+                                  <button
+                                    key={`train_${hub.id}`}
+                                    disabled={loading}
+                                    onClick={() => handleSelectHub(hub)}
+                                    className="w-full text-left bg-white rounded-lg px-3 py-2.5 text-sm border border-blue-100 hover:border-blue-400 hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <p className="font-bold text-gray-900 truncate">{hub.name}</p>
+                                        <p className="text-[11px] text-gray-500 truncate">{hub.address}</p>
+                                      </div>
+                                      <span className="text-[11px] text-gray-400 flex-shrink-0 whitespace-nowrap">
+                                        {hub.distance >= 1000 ? `${(hub.distance / 1000).toFixed(1)}km` : `${hub.distance}m`}
+                                      </span>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {/* 버스터미널 섹션 */}
+                          {msg.action.nearby_hubs.some(h => h.type === 'bus_terminal') && (
+                            <div>
+                              <p className="text-[10px] font-bold text-amber-600 mb-1 px-1">🚌 버스터미널</p>
+                              <div className="space-y-1.5">
+                                {msg.action.nearby_hubs.filter(h => h.type === 'bus_terminal').map(hub => (
+                                  <button
+                                    key={`bus_${hub.id}`}
+                                    disabled={loading}
+                                    onClick={() => handleSelectHub(hub)}
+                                    className="w-full text-left bg-white rounded-lg px-3 py-2.5 text-sm border border-amber-100 hover:border-amber-400 hover:bg-amber-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <p className="font-bold text-gray-900 truncate">{hub.name}</p>
+                                        <p className="text-[11px] text-gray-500 truncate">{hub.address}</p>
+                                      </div>
+                                      <span className="text-[11px] text-gray-400 flex-shrink-0 whitespace-nowrap">
+                                        {hub.distance >= 1000 ? `${(hub.distance / 1000).toFixed(1)}km` : `${hub.distance}m`}
+                                      </span>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   {/* 시간 제약 카드 */}
                   {msg.action?.action_type === 'time_constraint_set' && msg.action.time_constraint && (
                     <div className="mt-2 ml-10 p-3 bg-blue-50 border border-blue-200 rounded-xl">
@@ -374,23 +580,28 @@ export default function LandingPage({ onStartMode1, onStartMode2, onStartBusines
                     </div>
                   )}
 
-                  {/* 출장 정보 일부 파싱 카드 */}
-                  {msg.action?.action_type === 'trip_info_parsed' && msg.action.trip_fields && (
-                    <div className="mt-2 ml-10 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                      <p className="text-xs font-bold text-blue-700 mb-1.5">출장 정보 일부 파악</p>
-                      <div className="flex flex-wrap gap-1.5 text-xs">
-                        {msg.action.trip_fields.destination && (
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-lg">📍 {msg.action.trip_fields.destination}</span>
-                        )}
-                        {msg.action.trip_fields.date && (
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-lg">📅 {msg.action.trip_fields.date}</span>
-                        )}
-                        {msg.action.trip_fields.earliest_departure && (
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-lg">🕐 {msg.action.trip_fields.earliest_departure}</span>
-                        )}
+                  {/* 출장 정보 일부 파싱 — 파악된 항목만 칩으로 간결하게 표시 */}
+                  {msg.action?.action_type === 'trip_info_parsed' && msg.action.trip_fields && (() => {
+                    const tf = msg.action.trip_fields
+                    const chips: { icon: string; text: string }[] = []
+                    if (tf.destination) chips.push({ icon: '📍', text: tf.destination })
+                    if (tf.date) chips.push({ icon: '📅', text: tf.date })
+                    if (tf.earliest_departure) chips.push({ icon: '🕐', text: `${tf.earliest_departure} 이후` })
+                    if (tf.access_mode) chips.push({ icon: tf.access_mode === 'drive' ? '🚗' : '🚇', text: tf.access_mode === 'drive' ? '차량' : '대중교통' })
+                    if (tf.modes && tf.modes.length > 0) {
+                      chips.push({ icon: '🚄', text: tf.modes.map(m => m === 'train' ? '기차' : '고속버스').join('·') })
+                    }
+                    if (chips.length === 0) return null
+                    return (
+                      <div className="mt-2 ml-10 flex flex-wrap gap-1.5">
+                        {chips.map((c, i) => (
+                          <span key={i} className="px-2 py-0.5 bg-blue-50 border border-blue-200 text-blue-700 text-xs rounded-full">
+                            {c.icon} {c.text}
+                          </span>
+                        ))}
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
                 </div>
               ))}
 
@@ -537,8 +748,8 @@ export default function LandingPage({ onStartMode1, onStartMode2, onStartBusines
                 <polyline points="12 6 12 12 16 14" />
               </svg>
             }
-            title="한 달 시뮬레이션"
-            desc="향후 한 달간 모든 반차 슬롯의 소요시간을 예측합니다"
+            title="전체 슬롯 시뮬레이션"
+            desc="가능한 모든 반차 슬롯을 대상으로 소요시간을 예측합니다"
           />
           <StepCard
             step={3}

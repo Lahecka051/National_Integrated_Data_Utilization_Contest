@@ -97,7 +97,12 @@ export default function ResultPage({ result, errands, onReset, mode, onSetAlarm 
                 방문 일정
               </span>
             </h3>
-            <Timeline visits={selected.visits} halfDayType={selected.half_day_type} onVisitClick={handleVisitClick} />
+            <Timeline
+              visits={selected.visits}
+              halfDayType={selected.half_day_type}
+              onVisitClick={handleVisitClick}
+              originLabel={location.address || '현재 위치'}
+            />
           </div>
 
           {/* 카카오맵 */}

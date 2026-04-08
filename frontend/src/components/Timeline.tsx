@@ -11,10 +11,13 @@ interface TimelineProps {
   visits: FacilityVisit[]
   halfDayType: HalfDayType
   onVisitClick?: (index: number) => void
+  /** 출발지 이름. 미지정 시 '현재 위치'로 표시. */
+  originLabel?: string
 }
 
-export default function Timeline({ visits, halfDayType, onVisitClick }: TimelineProps) {
+export default function Timeline({ visits, halfDayType, onVisitClick, originLabel }: TimelineProps) {
   const startTime = halfDayType === '오후반차' ? '14:00' : '09:00'
+  const originText = originLabel?.trim() || '현재 위치'
 
   return (
     <div className="relative">
@@ -22,7 +25,7 @@ export default function Timeline({ visits, halfDayType, onVisitClick }: Timeline
         <TimelineItem
           time={startTime}
           title="출발"
-          subtitle="울산시청"
+          subtitle={originText}
           icon={
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <circle cx="12" cy="12" r="3" />

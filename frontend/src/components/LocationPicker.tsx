@@ -235,7 +235,7 @@ export default function LocationPicker({ onClose }: LocationPickerProps) {
             onClick={handleReset}
             className="w-full text-xs text-gray-500 hover:text-gray-700 py-2"
           >
-            기본 위치(울산시청)로 초기화
+            기본 위치(부산 경성대학교)로 초기화
           </button>
 
           {/* 에러 표시 */}

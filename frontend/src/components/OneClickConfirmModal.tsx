@@ -25,7 +25,7 @@ export default function OneClickConfirmModal({ plan, errands, onClose, onReset, 
       setResult(res)
       setPhase('done')
     } catch (e) {
-      setError('원클릭 확정에 실패했습니다. 백엔드가 실행 중인지 확인해주세요.')
+      setError('원클릭 확정에 실패했습니다. 잠시 후 다시 시도해주세요.')
       setPhase('error')
     }
   }

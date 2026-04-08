@@ -10,7 +10,7 @@ import type {
   ParkingListResponse, PublicParking, TransitHubListResponse, HubCongestion,
   GeocodeResult, ReverseGeocodeResult, HubType,
   TripRequest, TripRecommendResponse, TripConsultantState, TripConsultantChatResponse,
-  OneClickConfirmResponse,
+  OneClickConfirmResponse, NearbyBankOption,
 } from '../types'
 
 // === 외부 API 클라이언트 ===
@@ -56,8 +56,12 @@ export async function fetchRecommendation(
   errands: Errand[],
   startLat: number,
   startLng: number,
+  timeConstraint?: TimeConstraint | null,
 ): Promise<RecommendationResponse> {
-  const result = await recommendBestSlots(errands, startLat, startLng)
+  const result = await recommendBestSlots(
+    errands, startLat, startLng, 4,
+    timeConstraint ? (timeConstraint as any) : null,
+  )
   return {
     recommendations: result.recommendations,
     not_recommended: result.not_recommended,
@@ -240,6 +244,7 @@ export async function sendConsultantMessage(
   const shouldRecommend = result.should_recommend || false
 
   // 반차 상태 업데이트
+  // 기존 errand의 selected_facility는 보존되며, 새 errand는 selected_facility 없이 추가됨.
   const updatedErrands = [...currentErrands]
   if (result.parsed_errands) {
     const existing = new Set(updatedErrands.map(e => e.task_name))
@@ -262,17 +267,46 @@ export async function sendConsultantMessage(
   // 출장 상태 업데이트
   const updatedTripState: any = { ...(currentTripState || {}) }
   if (result.trip_fields) {
-    for (const key of ['destination', 'date', 'earliest_departure', 'parking_preference', 'modes']) {
+    for (const key of ['destination', 'date', 'earliest_departure', 'parking_preference', 'modes', 'access_mode']) {
       const val = (result.trip_fields as any)[key]
       if (val != null) updatedTripState[key] = val
     }
   }
 
-  // 추천 실행
+  // === 게이트: 반차 모드에서 은행 용무가 있고 selected_facility가 없으면 추천 차단 ===
+  // (사용자가 은행을 명시적으로 골라야만 추천 진행)
+  let nearbyBankOptions: NearbyBankOption[] | undefined
+  let bankReply: string | undefined
+  const needsBankSelection =
+    shouldRecommend &&
+    intent === 'half_day' &&
+    updatedErrands.some(e => e.task_type === '은행' && !e.selected_facility) &&
+    originLat != null && originLng != null
+
+  if (needsBankSelection) {
+    try {
+      const banksRes = await fetchNearbyBanks(originLat as number, originLng as number)
+      nearbyBankOptions = (banksRes.banks || []).slice(0, 6).map(b => ({
+        id: b.id,
+        name: b.name,
+        address: b.road_address || b.address || '',
+        distance: b.distance,
+        lat: b.lat,
+        lng: b.lng,
+      }))
+    } catch {
+      nearbyBankOptions = []
+    }
+    bankReply = nearbyBankOptions && nearbyBankOptions.length > 0
+      ? '은행 업무는 어느 지점에서 처리하시겠어요? 아래에서 선택해주세요.'
+      : '근처 은행을 찾지 못했어요. 위치를 확인하거나 다시 시도해주세요.'
+  }
+
+  // 추천 실행 (은행 게이트가 발동하지 않은 경우에만)
   let recommendationResult: RecommendationResponse | undefined
   let tripRecommendationResult: TripRecommendResponse | undefined
 
-  if (shouldRecommend) {
+  if (shouldRecommend && !needsBankSelection) {
     if (intent === 'half_day' && updatedErrands.length > 0 && originLat != null && originLng != null) {
       const rec = await recommendBestSlots(updatedErrands, originLat, originLng, 4, updatedTc as any)
       recommendationResult = {
@@ -294,20 +328,26 @@ export async function sendConsultantMessage(
         earliest_departure: updatedTripState.earliest_departure || '08:00',
         parking_preference: updatedTripState.parking_preference || 'near_hub',
         modes: updatedTripState.modes || ['train', 'expbus'],
+        access_mode: updatedTripState.access_mode || 'drive',
       })
       tripRecommendationResult = trip as TripRecommendResponse
       actionType = 'trip_request_recommend'
     }
   }
 
+  if (needsBankSelection) {
+    actionType = 'bank_selection_needed'
+  }
+
   return {
-    reply: result.text || '',
+    reply: bankReply || result.text || '',
     action: {
       action_type: actionType as any,
       intent: intent as any,
       parsed_errands: result.parsed_errands || undefined,
       time_constraint: result.time_constraint ? (updatedTc as TimeConstraint) : undefined,
       recommendation: recommendationResult,
+      nearby_banks: nearbyBankOptions,
       trip_fields: result.trip_fields || undefined,
       trip_recommendation: tripRecommendationResult,
     },
@@ -410,6 +450,7 @@ export async function fetchTripRecommend(req: TripRequest): Promise<TripRecommen
     earliest_departure: req.earliest_departure,
     parking_preference: req.parking_preference,
     modes: req.modes,
+    access_mode: req.access_mode,
   })
   return r as TripRecommendResponse
 }

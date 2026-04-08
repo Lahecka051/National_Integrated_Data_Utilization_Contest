@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import type { Errand, ChatMessage, TimeConstraint, ConsultantAction, RecommendationResponse, TripConsultantState, TripRecommendResponse } from '../types'
-import { sendConsultantMessage } from '../utils/api'
+import type { Errand, ChatMessage, TimeConstraint, ConsultantAction, RecommendationResponse, TripConsultantState, TripRecommendResponse, NearbyBankOption } from '../types'
+import { sendConsultantMessage, fetchRecommendation } from '../utils/api'
 import { useLocation } from '../contexts/LocationContext'
 
 interface LandingPageProps {
@@ -97,6 +97,63 @@ export default function LandingPage({ onStartMode1, onStartMode2, onStartBusines
     }
   }
 
+  /**
+   * 사용자가 챗봇의 "은행 선택" 카드에서 한 지점을 클릭했을 때.
+   * 1) sessionErrands의 은행 type errand에 selected_facility 주입
+   * 2) 사용자 메시지로 선택을 기록
+   * 3) LLM 우회하고 곧바로 추천 실행 → 결과 카드 추가
+   */
+  const handleSelectBank = async (bank: NearbyBankOption) => {
+    if (loading) return
+    setLoading(true)
+
+    const updatedErrands: Errand[] = sessionErrands.map(e => {
+      if (e.task_type !== '은행' || e.selected_facility) return e
+      return {
+        ...e,
+        facility_id: bank.id,
+        selected_facility: {
+          id: bank.id,
+          name: bank.name,
+          address: bank.address,
+          lat: bank.lat,
+          lng: bank.lng,
+        },
+      }
+    })
+    setSessionErrands(updatedErrands)
+
+    setMessages(prev => [
+      ...prev,
+      { role: 'user', content: `${bank.name}으로 진행해주세요` },
+    ])
+
+    try {
+      const recommendation = await fetchRecommendation(
+        updatedErrands, location.lat, location.lng, timeConstraint,
+      )
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `${bank.name} 지점으로 일정을 추천해드릴게요!`,
+          action: {
+            action_type: 'recommend_triggered',
+            intent: 'half_day',
+            recommendation,
+          },
+        },
+      ])
+    } catch {
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: '추천을 생성할 수 없습니다. 다시 시도해주세요.' },
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="pt-8 pb-8">
       {/* Hero */}
@@ -167,6 +224,11 @@ export default function LandingPage({ onStartMode1, onStartMode2, onStartBusines
                     🕐 {tripState.earliest_departure} 이후
                   </span>
                 )}
+                {tripState.access_mode && (
+                  <span className="px-2.5 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                    {tripState.access_mode === 'transit' ? '🚇 대중교통' : '🚗 차량'}
+                  </span>
+                )}
               </div>
             )}
 
@@ -203,6 +265,35 @@ export default function LandingPage({ onStartMode1, onStartMode2, onStartBusines
                           </span>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {/* 은행 선택 카드 — 은행 용무가 있는데 지점이 정해지지 않은 경우 */}
+                  {msg.action?.action_type === 'bank_selection_needed' && msg.action.nearby_banks && (
+                    <div className="mt-2 ml-10 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                      <p className="text-xs font-bold text-amber-700 mb-2">🏦 어느 은행에서 처리하시겠어요?</p>
+                      {msg.action.nearby_banks.length === 0 ? (
+                        <p className="text-xs text-gray-500 px-2 py-2">근처에서 은행을 찾지 못했어요. 위치를 확인해주세요.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {msg.action.nearby_banks.map(bank => (
+                            <button
+                              key={bank.id}
+                              disabled={loading}
+                              onClick={() => handleSelectBank(bank)}
+                              className="w-full text-left bg-white rounded-lg px-3 py-2.5 text-sm border border-amber-100 hover:border-amber-400 hover:bg-amber-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="font-bold text-gray-900 truncate">{bank.name}</p>
+                                  <p className="text-[11px] text-gray-500 truncate">{bank.address}</p>
+                                </div>
+                                <span className="text-[11px] text-gray-400 flex-shrink-0 whitespace-nowrap">{bank.distance}m</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 

@@ -73,9 +73,25 @@ export default function TripPlanCard({ plan, expanded, onClick }: TripPlanCardPr
         </div>
       </div>
 
-      {/* 타임라인 — 주차장 → 허브 → 기차/버스 */}
+      {/* 타임라인 — 주차장 또는 대중교통 → 허브 → 기차/버스 */}
       <div className="space-y-3 text-sm">
-        {plan.parking && (
+        {plan.access_mode === 'transit' && plan.transit_info && (
+          <div className="flex items-start gap-3">
+            <span className="text-xl">🚇</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-gray-800">대중교통으로 이동</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">
+                  지하철+버스
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                약 {plan.transit_info.duration_min}분 ({plan.transit_info.distance_km}km) · {plan.transit_info.note}
+              </p>
+            </div>
+          </div>
+        )}
+        {plan.access_mode !== 'transit' && plan.parking && (
           <div className="flex items-start gap-3">
             <span className="text-xl">🅿️</span>
             <div className="flex-1 min-w-0">

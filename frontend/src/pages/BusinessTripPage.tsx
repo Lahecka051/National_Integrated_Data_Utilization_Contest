@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { PublicParking, TransitHub, HubCongestion, HubType, TripPlan, TripRecommendResponse, ParkingPreference, TransportMode } from '../types'
+import type { PublicParking, TransitHub, HubCongestion, HubType, TripPlan, TripRecommendResponse, ParkingPreference, TransportMode, AccessMode } from '../types'
 import {
   fetchNearbyParking, fetchNearbyTrainStations, fetchNearbyBusTerminals, fetchHubCongestion,
   fetchTripRecommend,
@@ -108,6 +108,7 @@ export default function BusinessTripPage({ onBack, initialTripResult }: Business
     earliestDeparture: string
     parkingPreference: ParkingPreference
     modes: TransportMode[]
+    accessMode: AccessMode
   }) => {
     setTripLoading(true)
     setTripResult(null)
@@ -122,6 +123,7 @@ export default function BusinessTripPage({ onBack, initialTripResult }: Business
         earliest_departure: params.earliestDeparture,
         parking_preference: params.parkingPreference,
         modes: params.modes,
+        access_mode: params.accessMode,
       })
       setTripResult(result)
       if (result.plans.length > 0) {

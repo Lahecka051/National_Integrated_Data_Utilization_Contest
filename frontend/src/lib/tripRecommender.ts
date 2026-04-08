@@ -13,6 +13,19 @@ const TRAIN_COST_PER_KM = 105
 const BUS_COST_PER_KM = 62
 const WALK_SPEED_M_PER_MIN = 70
 
+// 도시 대중교통(지하철+버스) 평균 속도 — 환승/대기 포함 추정용
+const TRANSIT_AVG_KMH = 22
+// 첫 도보 + 환승 여유
+const TRANSIT_FIXED_OVERHEAD_MIN = 10
+
+/**
+ * 출발지 → 출발 허브 대중교통 이동시간 추정.
+ * (카카오 REST에 대중교통 길찾기가 없어 거리 기반 폴백 사용)
+ */
+function estimateTransitMinutes(distanceKm: number): number {
+  return Math.max(10, Math.round(TRANSIT_FIXED_OVERHEAD_MIN + (distanceKm / TRANSIT_AVG_KMH) * 60))
+}
+
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371
   const p1 = (lat1 * Math.PI) / 180
@@ -243,9 +256,12 @@ function scorePlan(plan: any, originDistanceM: number): number {
     if (parking.walk_minutes <= 5) base += 5
   }
   if (!plan.schedule.is_estimated) base += 5
-  if (originDistanceM <= 2000) base += 10
-  else if (originDistanceM <= 5000) base += 5
-  else if (originDistanceM > 10000) base -= 5
+  // 차량 모드는 origin~허브 거리에 따라 보정. 대중교통은 거리 페널티 적용 안 함.
+  if (plan.access_mode === 'drive') {
+    if (originDistanceM <= 2000) base += 10
+    else if (originDistanceM <= 5000) base += 5
+    else if (originDistanceM > 10000) base -= 5
+  }
   return Math.max(0, Math.min(100, base))
 }
 
@@ -257,6 +273,9 @@ function buildReasons(plan: any, isFastest: boolean, isCheapest: boolean): strin
   if (parking) {
     if (parking.status === '여유') reasons.push('주차 여유')
     if (parking.walk_minutes <= 5) reasons.push('역과 가까움')
+  }
+  if (plan.access_mode === 'transit') {
+    reasons.push('대중교통 이용')
   }
   if (!plan.schedule.is_estimated) reasons.push('실시간 시간표')
   return reasons.length > 0 ? reasons : ['표준 추천']
@@ -270,12 +289,14 @@ export async function recommendTrip(params: {
   earliest_departure?: string
   parking_preference?: 'near_hub' | 'near_home'
   modes?: ('train' | 'expbus')[]
+  access_mode?: 'drive' | 'transit'
 }): Promise<any> {
   const {
     origin_lat, origin_lng, destination, date,
     earliest_departure = '08:00',
     parking_preference = 'near_hub',
     modes = ['train', 'expbus'],
+    access_mode = 'drive',
   } = params
   const wantTrain = modes.includes('train')
   const wantBus = modes.includes('expbus')
@@ -358,21 +379,33 @@ export async function recommendTrip(params: {
     if (!schedule.is_estimated) hasRealtime = true
 
     let parking: any = null
-    let walkMin = 0
-    if (parking_preference === 'near_hub') {
+    let transitInfo: any = null
+    let accessMin = 0
+
+    if (access_mode === 'transit') {
+      // 대중교통: 주차장 매칭 스킵, 출발지→허브 거리 기반 추정
+      const distKm = haversineKm(origin_lat, origin_lng, originHub.lat, originHub.lng)
+      const minutes = estimateTransitMinutes(distKm)
+      transitInfo = {
+        duration_min: minutes,
+        distance_km: Math.round(distKm * 10) / 10,
+        note: '지하철+버스 거리 기반 추정',
+      }
+      accessMin = minutes
+    } else if (parking_preference === 'near_hub') {
       const parkingRaw = await pickParking(originHub.lat, originHub.lng, 700)
       parking = parkingRaw ? parkingSummary(parkingRaw, originHub.lat, originHub.lng) : null
-      walkMin = parking ? parking.walk_minutes : 0
+      accessMin = parking ? parking.walk_minutes : 0
     } else {
       const parkingRaw = await pickParking(origin_lat, origin_lng, 1500)
       if (parkingRaw) {
         parking = parkingSummary(parkingRaw, originHub.lat, originHub.lng)
       }
       const hubDistKm = haversineKm(origin_lat, origin_lng, originHub.lat, originHub.lng)
-      walkMin = Math.floor(hubDistKm * 4)
+      accessMin = Math.floor(hubDistKm * 4)
     }
 
-    const total = walkMin + schedule.duration_min + 10
+    const total = accessMin + schedule.duration_min + 10
     const fareTotal = schedule.fare_won
     const originDistM = Math.floor(haversineKm(origin_lat, origin_lng, originHub.lat, originHub.lng) * 1000)
 
@@ -382,6 +415,8 @@ export async function recommendTrip(params: {
       schedule,
       parking,
       parking_preference,
+      access_mode,
+      transit_info: transitInfo,
       total_duration_min: total,
       total_fare_won: fareTotal,
       score: 0,

@@ -68,8 +68,20 @@ export default function TripTimeline({ plan, originAddress, destinationResolved 
           </p>
         </div>
 
-        {/* 주차장 */}
-        {plan.parking && (
+        {/* 대중교통 — access_mode === 'transit' */}
+        {plan.access_mode === 'transit' && plan.transit_info && (
+          <div className="relative">
+            <div className="absolute -left-8 top-0 w-6 h-6 rounded-full bg-indigo-400 border-4 border-white flex items-center justify-center text-sm">🚇</div>
+            <p className="text-xs text-indigo-700 font-bold">대중교통 이동</p>
+            <p className="text-sm font-bold text-gray-900 mt-0.5">지하철 + 버스</p>
+            <p className="text-xs text-gray-500">약 {plan.transit_info.distance_km}km</p>
+            <p className="text-xs text-gray-400 mt-1">↓ {plan.transit_info.duration_min}분 소요 (추정)</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{plan.transit_info.note}</p>
+          </div>
+        )}
+
+        {/* 주차장 — access_mode !== 'transit' (차량 모드) */}
+        {plan.access_mode !== 'transit' && plan.parking && (
           <div className="relative">
             <div className="absolute -left-8 top-0 w-6 h-6 rounded-full bg-amber-400 border-4 border-white flex items-center justify-center text-sm">🅿️</div>
             <div className="flex items-center gap-2 flex-wrap">

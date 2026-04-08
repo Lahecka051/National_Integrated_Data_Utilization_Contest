@@ -133,15 +133,24 @@ ${TASK_CATALOG}
 - "전입", "이사", "전출" → "전입신고"
 
 [모드 2: 출장 모드]
-차량을 공공주차장에 세우고 기차/고속버스로 출장 가는 사용자에게
-주차장 + 출발역/터미널 + 기차/버스편을 추천
+차량 또는 대중교통으로 기차역/터미널까지 가서 기차/고속버스로 출장 가는 사용자에게
+이동수단 + 출발역/터미널 + 기차/버스편을 추천
 
 출장 모드는 다음을 파싱:
 - destination: 목적지 도시명 또는 역명 (예: "부산", "대전", "동대구역")
 - date: YYYY-MM-DD (오늘/내일/다음 주 수요일 같은 표현 변환)
 - earliest_departure: HH:MM (출발 희망 시각)
-- parking_preference: "near_hub" | "near_home"
-- modes: ["train", "expbus"] 중 하나 또는 둘 다
+- parking_preference: "near_hub" | "near_home" (차량 모드일 때만 의미)
+- modes: ["train", "expbus"] 중 하나 또는 둘 다 (도시간 이동 수단)
+- access_mode: "drive" | "transit" — 출발지에서 출발 기차역/터미널까지의 이동 수단
+  - "drive": 자가용으로 가서 공공주차장에 주차 (기본값)
+  - "transit": 지하철/시내버스 같은 대중교통으로 이동 (주차장 사용 안 함)
+
+[access_mode 파싱 힌트]
+- "차 안 끌고", "차 두고", "지하철로", "지하철 타고", "버스로" (도시간 고속버스가 아니라 시내버스 의미일 때),
+  "대중교통으로", "버스나 지하철로" → access_mode = "transit"
+- "차 끌고", "운전해서", "차로 가서", "주차하고" → access_mode = "drive"
+- 명시 없으면 access_mode = "drive" (기본)
 
 [의도 감지 규칙]
 다음 중 하나라도 해당하면 출장 모드(business_trip):
@@ -199,7 +208,7 @@ ${dateHintsText}
   "action_type": "errands_parsed" | "time_constraint_set" | "request_recommend" | "trip_info_parsed" | "trip_request_recommend" | "none",
   "parsed_errands": [{"task_type": "...", "task_name": "...", "estimated_duration": N}] | null,
   "time_constraint": {"start_time": "HH:MM"|null, "end_time": "HH:MM"|null, "date": "YYYY-MM-DD"|null, "start_date": "YYYY-MM-DD"|null} | null,
-  "trip_fields": {"destination": "..."|null, "date": "YYYY-MM-DD"|null, "earliest_departure": "HH:MM"|null, "parking_preference": "near_hub"|"near_home"|null, "modes": ["train","expbus"]|null} | null,
+  "trip_fields": {"destination": "..."|null, "date": "YYYY-MM-DD"|null, "earliest_departure": "HH:MM"|null, "parking_preference": "near_hub"|"near_home"|null, "modes": ["train","expbus"]|null, "access_mode": "drive"|"transit"|null} | null,
   "should_recommend": false
 }`
 
@@ -287,10 +296,16 @@ ${dateHintsText}
         tf.modes = tf.modes.filter((m: string) => ['train', 'expbus'].includes(m))
         if (tf.modes.length === 0) tf.modes = null
       }
+      if (tf.access_mode && !['drive', 'transit'].includes(tf.access_mode)) {
+        tf.access_mode = null
+      }
       if (tf.destination) {
         tf.destination = String(tf.destination).trim() || null
       }
-      if (!tf.destination && !tf.date && !tf.earliest_departure && !tf.parking_preference && !tf.modes) {
+      if (
+        !tf.destination && !tf.date && !tf.earliest_departure &&
+        !tf.parking_preference && !tf.modes && !tf.access_mode
+      ) {
         parsed.trip_fields = null
       }
     }

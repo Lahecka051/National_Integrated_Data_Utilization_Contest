@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ParkingPreference, TransportMode } from '../types'
+import type { AccessMode, ParkingPreference, TransportMode } from '../types'
 
 interface TripPlanFormProps {
   onSubmit: (params: {
@@ -8,6 +8,7 @@ interface TripPlanFormProps {
     earliestDeparture: string
     parkingPreference: ParkingPreference
     modes: TransportMode[]
+    accessMode: AccessMode
   }) => void
   loading?: boolean
 }
@@ -23,6 +24,7 @@ export default function TripPlanForm({ onSubmit, loading }: TripPlanFormProps) {
   const [destination, setDestination] = useState('')
   const [date, setDate] = useState(todayStr())
   const [earliest, setEarliest] = useState('08:00')
+  const [accessMode, setAccessMode] = useState<AccessMode>('drive')
   const [parking, setParking] = useState<ParkingPreference>('near_hub')
   const [modes, setModes] = useState<TransportMode[]>(['train', 'expbus'])
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +52,7 @@ export default function TripPlanForm({ onSubmit, loading }: TripPlanFormProps) {
       earliestDeparture: earliest,
       parkingPreference: parking,
       modes,
+      accessMode,
     })
   }
 
@@ -105,35 +108,69 @@ export default function TripPlanForm({ onSubmit, loading }: TripPlanFormProps) {
         </div>
       </div>
 
+      {/* 출발지 → 출발 허브 이동 수단 */}
       <div>
-        <label className="text-xs font-bold text-gray-500 mb-2 block">주차장 위치</label>
+        <label className="text-xs font-bold text-gray-500 mb-2 block">허브까지 이동 수단</label>
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => setParking('near_hub')}
+            onClick={() => setAccessMode('drive')}
             disabled={loading}
             className={`py-2.5 rounded-xl text-sm font-medium transition-all border-2 ${
-              parking === 'near_hub'
+              accessMode === 'drive'
                 ? 'border-primary-500 bg-primary-50 text-primary-700'
                 : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
             }`}
           >
-            🚄 출발역 근처
+            🚗 차량 + 주차장
           </button>
           <button
             type="button"
-            onClick={() => setParking('near_home')}
+            onClick={() => setAccessMode('transit')}
             disabled={loading}
             className={`py-2.5 rounded-xl text-sm font-medium transition-all border-2 ${
-              parking === 'near_home'
+              accessMode === 'transit'
                 ? 'border-primary-500 bg-primary-50 text-primary-700'
                 : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
             }`}
           >
-            🏠 현재 위치 근처
+            🚇 대중교통
           </button>
         </div>
       </div>
+
+      {/* 주차장 위치 — 차량 모드일 때만 */}
+      {accessMode === 'drive' && (
+        <div>
+          <label className="text-xs font-bold text-gray-500 mb-2 block">주차장 위치</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setParking('near_hub')}
+              disabled={loading}
+              className={`py-2.5 rounded-xl text-sm font-medium transition-all border-2 ${
+                parking === 'near_hub'
+                  ? 'border-primary-500 bg-primary-50 text-primary-700'
+                  : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+              }`}
+            >
+              🚄 출발역 근처
+            </button>
+            <button
+              type="button"
+              onClick={() => setParking('near_home')}
+              disabled={loading}
+              className={`py-2.5 rounded-xl text-sm font-medium transition-all border-2 ${
+                parking === 'near_home'
+                  ? 'border-primary-500 bg-primary-50 text-primary-700'
+                  : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+              }`}
+            >
+              🏠 현재 위치 근처
+            </button>
+          </div>
+        </div>
+      )}
 
       <div>
         <label className="text-xs font-bold text-gray-500 mb-2 block">교통수단</label>

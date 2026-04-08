@@ -316,11 +316,43 @@ export async function recommendBestSlots(
   }
 
   const uniqueTypes = new Set(errands.map(e => e.task_type))
-  const facilityMapRaw = await resolveFacilitiesForTypes(uniqueTypes, originLat, originLng)
+
+  // 1) 사용자가 ErrandSelectPage에서 직접 선택한 시설(예: 특정 은행 지점)을 우선 사용.
+  //    같은 type에 selected_facility가 여러 개면 마지막 것을 사용 (덮어쓰기).
+  const userSelected: Record<string, ResolvedFacility> = {}
+  for (const e of errands) {
+    if (!e.selected_facility) continue
+    const sf = e.selected_facility
+    userSelected[e.task_type] = {
+      id: sf.id,
+      name: sf.name,
+      type: e.task_type,
+      address: sf.address || '',
+      lat: sf.lat,
+      lng: sf.lng,
+      open_time: '09:00',
+      close_time: e.task_type === '은행' ? '16:00' : '18:00',
+    }
+  }
+
+  // 2) 사용자가 직접 안 고른 type만 자동 검색.
+  const typesToResolve = new Set<string>()
+  for (const t of uniqueTypes) {
+    if (!(t in userSelected)) typesToResolve.add(t)
+  }
+  const facilityMapRaw = typesToResolve.size > 0
+    ? await resolveFacilitiesForTypes(typesToResolve, originLat, originLng)
+    : {}
+
+  // 3) 병합 (사용자 선택이 항상 우선).
   const facilityMap: Record<string, ResolvedFacility> = {}
   for (const [k, v] of Object.entries(facilityMapRaw)) {
     if (v) facilityMap[k] = v
   }
+  for (const [k, v] of Object.entries(userSelected)) {
+    facilityMap[k] = v
+  }
+
   if (Object.keys(facilityMap).length === 0) {
     return { recommendations: [], not_recommended: null, note: '현재 위치 주변에서 처리 가능한 시설을 찾지 못했습니다.' }
   }

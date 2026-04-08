@@ -13,10 +13,24 @@ export interface Facility {
   close_time: string
 }
 
+/**
+ * 사용자가 ErrandSelectPage에서 직접 선택한 시설(예: 특정 은행 지점).
+ * 자동 검색(가장 가까운 시설)을 우회하기 위해 errand에 첨부한다.
+ */
+export interface SelectedFacility {
+  id: string
+  name: string
+  address: string
+  lat: number
+  lng: number
+}
+
 export interface Errand {
   task_type: FacilityType
   task_name: string
   facility_id?: string
+  /** 사용자가 직접 선택한 시설. 있으면 optimizer가 자동검색 대신 이걸 사용한다. */
+  selected_facility?: SelectedFacility
   estimated_duration: number
 }
 
@@ -185,6 +199,12 @@ export interface HubCongestion {
 // === 출장 여행 추천 ===
 export type TransportMode = 'train' | 'expbus'
 export type ParkingPreference = 'near_hub' | 'near_home'
+/**
+ * 출발지 → 출발 허브 이동 수단.
+ *  - 'drive':   차량 (기존 동작) — 공공주차장 매칭 포함
+ *  - 'transit': 대중교통 (버스/지하철) — 주차장 없음, 거리 기반 이동시간 추정
+ */
+export type AccessMode = 'drive' | 'transit'
 
 export interface TripRequest {
   origin_lat: number
@@ -194,6 +214,8 @@ export interface TripRequest {
   earliest_departure: string    // HH:MM
   parking_preference: ParkingPreference
   modes: TransportMode[]
+  /** 출발지→허브 이동 수단. 미지정 시 'drive'(기존 동작). */
+  access_mode?: AccessMode
 }
 
 export interface TripHub {
@@ -233,6 +255,15 @@ export interface TripParkingInfo {
   fee_info: string
 }
 
+/**
+ * access_mode === 'transit'일 때, 출발지→출발허브 대중교통 이동 정보.
+ */
+export interface TripTransitInfo {
+  duration_min: number     // 추정 소요시간
+  distance_km: number      // 거리
+  note: string             // 예: "지하철+버스 추정"
+}
+
 export interface TripPlan {
   rank: number
   origin_hub: TripHub
@@ -240,6 +271,10 @@ export interface TripPlan {
   schedule: TripScheduleInfo
   parking: TripParkingInfo | null
   parking_preference: ParkingPreference
+  /** 어떤 수단으로 출발 허브까지 가는지. 'drive' = 주차장 사용, 'transit' = 대중교통. */
+  access_mode: AccessMode
+  /** access_mode === 'transit' 일 때만 채워짐. */
+  transit_info?: TripTransitInfo | null
   total_duration_min: number
   total_fare_won: number
   score: number
@@ -263,6 +298,7 @@ export interface TripConsultantState {
   earliest_departure?: string | null
   parking_preference?: ParkingPreference | null
   modes?: TransportMode[] | null
+  access_mode?: AccessMode | null
 }
 
 export interface TripConsultantAction {
@@ -345,9 +381,20 @@ export type ConsultantActionType =
   | 'time_constraint_set'
   | 'recommend_triggered'
   | 'request_recommend'
+  | 'bank_selection_needed'
   | 'trip_info_parsed'
   | 'trip_request_recommend'
   | 'none'
+
+/** 챗봇 은행 선택 카드용 — sendConsultantMessage가 첨부 */
+export interface NearbyBankOption {
+  id: string
+  name: string
+  address: string
+  distance: number
+  lat: number
+  lng: number
+}
 
 export type ConsultantIntent = 'half_day' | 'business_trip' | 'none'
 
@@ -358,6 +405,8 @@ export interface ConsultantAction {
   parsed_errands?: Errand[]
   time_constraint?: TimeConstraint
   recommendation?: RecommendationResponse
+  /** action_type === 'bank_selection_needed' 일 때, 사용자가 고를 수 있는 근처 은행 후보 */
+  nearby_banks?: NearbyBankOption[]
   // 출장
   trip_fields?: {
     destination?: string | null
@@ -365,6 +414,7 @@ export interface ConsultantAction {
     earliest_departure?: string | null
     parking_preference?: 'near_hub' | 'near_home' | null
     modes?: ('train' | 'expbus')[] | null
+    access_mode?: AccessMode | null
   }
   trip_recommendation?: TripRecommendResponse
 }
@@ -380,6 +430,7 @@ export interface ConsultantChatResponse {
     earliest_departure?: string | null
     parking_preference?: 'near_hub' | 'near_home' | null
     modes?: ('train' | 'expbus')[] | null
+    access_mode?: AccessMode | null
   }
   error: boolean
 }

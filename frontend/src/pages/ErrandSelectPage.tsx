@@ -65,10 +65,22 @@ export default function ErrandSelectPage({ onSubmit, error, mode, onBack }: Erra
     for (const [, info] of Object.entries(TASK_MAP)) {
       for (const task of info.tasks) {
         if (selected.has(task)) {
+          const isBank = info.type === '은행'
+          // 사용자가 직접 은행 지점을 골랐으면, optimizer가 자동검색을 건너뛰도록
+          // selected_facility 풀세트(name/lat/lng 포함)를 함께 전달한다.
+          // facility_id만 전달하면 optimizer가 무시하고 가까운 은행으로 폴백한다.
+          const selFac = isBank && selectedBank ? {
+            id: selectedBank.id,
+            name: selectedBank.name,
+            address: selectedBank.road_address || selectedBank.address || '',
+            lat: selectedBank.lat,
+            lng: selectedBank.lng,
+          } : undefined
           errands.push({
             task_type: info.type,
             task_name: task,
-            facility_id: info.type === '은행' && selectedBank ? selectedBank.id : undefined,
+            facility_id: selFac?.id,
+            selected_facility: selFac,
             estimated_duration: DURATIONS[task] || 15,
           })
         }
